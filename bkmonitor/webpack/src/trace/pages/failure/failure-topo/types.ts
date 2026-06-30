@@ -63,9 +63,25 @@ export interface EventStatistics {
 
 export interface IEdge {
   [key: string]: any;
+  aggregated?: boolean;
+  aggregated_edges?: IEdge[];
+  anomaly_score: number;
+  count?: number;
+  direction?: string;
   edge_type: string;
   events: Record<string, any>[];
   is_anomaly: boolean;
+  nodes?: any[];
+  source?: string;
+  source_is_anomaly?: boolean;
+  source_is_on_alert?: boolean;
+  source_name?: string;
+  source_type?: string;
+  target?: string;
+  target_is_anomaly?: boolean;
+  target_is_on_alert?: boolean;
+  target_name?: string;
+  target_type?: string;
 }
 
 export interface IEntity {
@@ -188,7 +204,9 @@ export interface ITopoEdge extends ModelConfig {
 
 export interface ITopoNode extends ModelConfig {
   aggregated_nodes?: ITopoNode[];
+  alert_all_recorved?: boolean;
   alert_ids?: string[];
+  anomaly_count?: number;
   bk_biz_id?: string;
   bk_biz_name?: string;
   comboId?: string;
@@ -205,6 +223,8 @@ export interface ITopoNode extends ModelConfig {
   };
   properties: {
     aggregated_by?: string[];
+    entity_category?: string;
+    entity_show_type?: string;
   };
 }
 
