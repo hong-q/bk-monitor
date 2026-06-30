@@ -25,10 +25,10 @@
  */
 import { Shape } from '@antv/g6';
 
-import CancelFeedbackRoot from '../../../static/img/failure/icon-cancel-feedback.svg';
-import FeedbackRoot from '../../../static/img/failure/icon-feedback.svg';
-import { NODE_TYPE_SVG } from './node-type-svg';
-import { getNodeAttrs, truncateText } from './utils';
+import CancelFeedbackRoot from '../../../../static/img/failure/icon-cancel-feedback.svg';
+import FeedbackRoot from '../../../../static/img/failure/icon-feedback.svg';
+import { NODE_TYPE_SVG } from '../node-type-svg';
+import { getNodeAttrs, truncateText } from '../utils';
 
 // service combo的实现，主要重写g6 原型本身对于label的实现
 export default {

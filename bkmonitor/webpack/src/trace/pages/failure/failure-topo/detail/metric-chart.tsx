@@ -41,9 +41,9 @@ import { echarts } from 'monitor-ui/monitor-echarts/types/monitor-echarts';
 import { getValueFormat } from 'monitor-ui/monitor-echarts/valueFormats';
 import { useI18n } from 'vue-i18n';
 
-import { handleYAxisLabelFormatter, removeTrailingZeros } from '../../utils';
+import { handleYAxisLabelFormatter, removeTrailingZeros } from '../utils';
 
-import type { IMetricItem, MetricEvent } from '../../types';
+import type { IMetricItem, MetricEvent } from '../types';
 
 const baseLineSeriesConfig = {
   type: 'line',

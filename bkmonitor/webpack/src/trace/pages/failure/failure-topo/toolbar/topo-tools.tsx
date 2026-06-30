@@ -29,11 +29,11 @@ import { incidentTopologyMenu } from 'monitor-api/modules/incident';
 import { random } from 'monitor-common/utils/utils';
 import { useI18n } from 'vue-i18n';
 
-import { useIncidentInject } from '../utils';
+import { useIncidentInject } from '../../utils';
 import AggregationSelect from './aggregation-select';
 import Timeline from './timeline';
 
-import type { TopoRawData } from './types';
+import type { TopoRawData } from '../types';
 
 import './topo-tools.scss';
 

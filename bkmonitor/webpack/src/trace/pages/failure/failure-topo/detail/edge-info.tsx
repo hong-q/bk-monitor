@@ -29,12 +29,12 @@ import { type PropType, type Ref, computed, defineComponent, inject } from 'vue'
 import { OverflowTitle } from 'bkui-vue';
 import { useI18n } from 'vue-i18n';
 
-import { checkIsRoot } from '../../../utils';
-import { NODE_TYPE_ICON } from '../../node-type-svg';
-import { canJumpByType, getApmServiceType, handleToLink } from '../../utils';
+import { checkIsRoot } from '../../utils';
+import { NODE_TYPE_ICON } from '../node-type-svg';
+import { canJumpByType, getApmServiceType, handleToLink } from '../utils';
 import MetricView from './metric-view';
 
-import type { IncidentDetailData, ITopoNode } from '../../types';
+import type { IncidentDetailData, ITopoNode } from '../types';
 
 import './edge-info.scss';
 

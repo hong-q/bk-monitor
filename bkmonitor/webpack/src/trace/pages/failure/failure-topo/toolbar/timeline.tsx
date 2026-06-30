@@ -29,7 +29,7 @@ import { DatePicker, Dropdown, Slider } from 'bkui-vue';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 
-import type { IncidentDetailData, TopoRawData } from './types';
+import type { IncidentDetailData, TopoRawData } from '../types';
 
 import './timeline.scss';
 import 'bkui-vue/lib/time-picker/time-picker.css';

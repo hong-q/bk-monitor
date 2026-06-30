@@ -28,8 +28,8 @@ import { type PropType, computed, defineComponent, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import ExceptionComp from '../../../../components/exception';
-import EdgeInfo from './components/edge-info';
-import NodeInfo from './components/node-info';
+import EdgeInfo from './edge-info';
+import NodeInfo from './node-info';
 
 import type { ActiveTab, IEdge } from '../types';
 

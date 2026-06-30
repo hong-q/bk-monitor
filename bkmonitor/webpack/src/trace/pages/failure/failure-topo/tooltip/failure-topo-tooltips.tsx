@@ -30,12 +30,12 @@ import { Message, Popover } from 'bkui-vue';
 import { copyText } from 'monitor-common/utils/utils';
 import { useI18n } from 'vue-i18n';
 
-import AggregatedEdgesList from './components/aggregated-edges-list';
-import { NODE_TYPE_ICON } from './node-type-svg';
-import { canJumpByType, handleToLink, typeToLinkHandle } from './utils';
-import { getApmServiceType, getNodeAttrs } from './utils';
+import { NODE_TYPE_ICON } from '../node-type-svg';
+import { canJumpByType, handleToLink, typeToLinkHandle } from '../utils';
+import { getApmServiceType, getNodeAttrs } from '../utils';
+import AggregatedEdgesList from './aggregated-edges-list';
 
-import type { IEdge, IncidentDetailData, ITopoNode } from './types';
+import type { IEdge, IncidentDetailData, ITopoNode } from '../types';
 
 import './failure-topo-tooltips.scss';
 type PopoverInstance = {

@@ -61,15 +61,15 @@ import ExceptionComp from '../../../components/exception';
 import { incidentAlarmDetailInject } from '../composables/use-alarm-detail';
 import ResourceGraph from '../resource-graph/resource-graph';
 import { checkIsRoot, useIncidentInject } from '../utils';
-import LegendPopoverContent from './components/legend-popover-content';
-import ElkjsUtils from './elkjs-utils';
-import FailureTopoDetail from './failure-topo-detail/failure-topo-detail';
-import FailureTopoTooltips from './failure-topo-tooltips';
+import LegendPopoverContent from './legend/legend-popover-content';
+import ElkjsUtils from './graph/elkjs-utils';
+import FailureTopoDetail from './detail/failure-topo-detail';
+import FailureTopoTooltips from './tooltip/failure-topo-tooltips';
 import FeedbackCauseDialog from './feedback-cause-dialog';
-import formatTopoData from './format-topo-data';
+import formatTopoData from './graph/format-topo-data';
 import { NODE_TYPE_SVG } from './node-type-svg';
-import ServiceCombo from './service-combo';
-import TopoTools from './topo-tools';
+import ServiceCombo from './graph/service-combo';
+import TopoTools from './toolbar/topo-tools';
 import {
   canJumpByType,
   createConnectedParallelCurves,

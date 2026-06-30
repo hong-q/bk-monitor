@@ -43,9 +43,9 @@ import { debounce } from 'throttle-debounce';
 import { useI18n } from 'vue-i18n';
 
 import ExceptionComp from '../../../components/exception';
-import FailureTopoTooltips from '../failure-topo/failure-topo-tooltips';
+import FailureTopoTooltips from '../failure-topo/tooltip/failure-topo-tooltips';
 import { NODE_TYPE_SVG } from '../failure-topo/node-type-svg';
-import TopoTooltip from '../failure-topo/topo-tppltip-plugin';
+import TopoTooltip from '../failure-topo/tooltip/topo-tooltip-plugin';
 import { getApmServiceType, getNodeAttrs } from '../failure-topo/utils';
 import { checkIsRoot, useIncidentInject } from '../utils';
 import { createGraphData } from './resource-data';

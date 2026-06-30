@@ -32,11 +32,11 @@ import base64Svg from 'monitor-common/svg/base64';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 
-import ExceptionComp from '../../../../../components/exception';
-import { handleToEventPage } from '../../utils';
-import { getIncidentEventTagDetails } from '../use-custom';
+import ExceptionComp from '../../../../components/exception';
+import { handleToEventPage } from '../utils';
+import { getIncidentEventTagDetails } from './use-custom';
 
-import type { IEventTagsItem, IPosition } from '../../types';
+import type { IEventTagsItem, IPosition } from '../types';
 import type { ICustomEventDetail, ITargetInfo } from 'monitor-ui/chart-plugins/plugins/caller-line-chart/use-custom';
 
 import './custom-event-menu.scss';

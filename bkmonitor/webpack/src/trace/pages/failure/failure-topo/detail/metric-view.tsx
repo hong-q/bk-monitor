@@ -31,12 +31,12 @@ import dayjs from 'dayjs';
 import { fitPosition } from 'monitor-ui/chart-plugins/utils';
 import { useI18n } from 'vue-i18n';
 
-import ExceptionComp from '../../../../../components/exception';
-import useMetrics from '../useMetrics';
+import ExceptionComp from '../../../../components/exception';
+import useMetrics from './useMetrics';
 import CustomEventMenu from './custom-event-menu';
 import MetricChart from './metric-chart';
 
-import type { IEventTagsItem, IMetricItem } from '../../types';
+import type { IEventTagsItem, IMetricItem } from '../types';
 
 import './metric-view.scss';
 
