@@ -29,7 +29,7 @@ import { Input, Popover, Switcher, Tree } from 'bkui-vue';
 import { Search } from 'bkui-vue/lib/icon';
 import { useI18n } from 'vue-i18n';
 
-import ExceptionComp from '../../../components/exception';
+import ExceptionComp from '../../../../components/exception';
 
 import './aggregation-select.scss';
 
