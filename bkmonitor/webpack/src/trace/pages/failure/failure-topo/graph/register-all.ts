@@ -24,6 +24,11 @@
  * IN THE SOFTWARE.
  */
 
+/**
+ * @file G6 自定义元素统一注册入口
+ * @description 在 Graph 创建前/后分别注册边、combo、行为与节点，并提供动画清理
+ */
+
 import { registerDragCanvasMove } from './behaviors/drag-canvas-move';
 import { registerDragNodeWithFixedCombo } from './behaviors/drag-node-with-fixed-combo';
 import { registerScrollCanvas } from './behaviors/scroll-canvas';
@@ -31,16 +36,17 @@ import { registerTopoCombo } from './register-combo';
 import { clearEdgeIntervals, registerTopoEdge } from './topo-edge';
 import { clearActiveAnimations, registerTopoNode } from './topo-node';
 
-import type { ComboLabelPoint, TruncateByTextWidthFn } from '../g6-types';
+import type { CanvasByPointResult, ComboLabelPoint, TruncateByTextWidthFn } from '../types/g6';
+import type { ICombo } from '@antv/g6';
 
 export interface RegisterAllBeforeGraphOptions {
   /** 根 combo 拖拽后的 label 位置 (Ref) */
   rootComboMovePoint: { value: ComboLabelPoint };
   /** 获取 combo 的画布坐标范围的函数 */
-  getCanvasByPoint: (combo: any) => { bottomRight: any; topLeft: any };
+  getCanvasByPoint: (combo: ICombo) => CanvasByPointResult;
   /** 移动 combo label 位置的函数 */
   moveComboLabelPosition: (point: { x?: number; y?: number }) => void;
-  /** 将异常边置顶的函数 */
+  /** 将边置于顶层的回调（实现为全部边 toFront） */
   toFrontAnomalyEdge: () => void;
 }
 

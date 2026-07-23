@@ -25,8 +25,8 @@
  */
 
 /**
- * topo-node.ts — 自定义 G6 节点注册
- * 从 failure-topo.tsx 中提取，注册 'topo-node' 自定义节点类型
+ * @file 自定义拓扑节点注册
+ * @description 注册 G6 'topo-node'，并提供文本截断工厂与节点动画清理
  */
 
 import { registerNode } from '@antv/g6';
@@ -35,18 +35,17 @@ import { checkIsRoot } from '../../utils';
 import { NODE_TYPE_SVG } from '../node-type-svg';
 import { getApmServiceType, getNodeAttrs, truncateText } from '../utils';
 
-import type { NodeStyleAttrs, TruncateByTextWidthFn } from '../g6-types';
-import type { ITopoNode } from '../types';
+import type { NodeStyleAttrs, TruncateByTextWidthFn } from '../types/g6';
+import type { ITopoNode } from '../types/topo';
+import type { IGroup, Item, ModelConfig } from '@antv/g6';
 
 // ============================================================================
-// 文本截断工厂函数（原 accumulatedWidth，重构为无闭包依赖的工厂模式）
+// 文本截断工厂函数
 // ============================================================================
 
 /**
  * 创建文本截断函数（基于 Canvas 2D context 测量文本宽度）
- *
- * 原 failure-topo.tsx 中的 accumulatedWidth 闭包依赖 graph.get('canvas').get('context')，
- * 现重构为工厂函数，由调用方注入 Canvas context，返回可复用的截断函数。
+ * 由调用方注入 Canvas context，返回可复用的截断函数。
  *
  * @param context - Canvas 2D 上下文，通常从 graph.get('canvas').get('context') 获取
  * @returns TruncateByTextWidthFn - 文本截断函数
@@ -75,7 +74,7 @@ export function createTruncateByTextWidth(context: CanvasRenderingContext2D): Tr
 // ============================================================================
 
 /** 模块内部：存储当前活跃的动画实例，用于 setState('running', false) 时批量停止 */
-let activeAnimation: any[] = [];
+let activeAnimation: { stop?: () => void }[] = [];
 
 /** 清理所有节点动画（组件卸载时调用） */
 export function clearActiveAnimations(): void {
@@ -99,9 +98,11 @@ export function clearActiveAnimations(): void {
  */
 export function registerTopoNode(truncateByTextWidth: TruncateByTextWidthFn): void {
   registerNode('topo-node', {
-    afterDraw(cfg, group) {
-      const nodeAttrs: NodeStyleAttrs = getNodeAttrs(cfg as ITopoNode);
-      const { entity, alert_all_recorved, is_feedback_root } = cfg as ITopoNode;
+    afterDraw(cfg: ModelConfig, group: IGroup) {
+      // registerNode 回调入参为 ModelConfig，内部断言为业务节点
+      const model = cfg as ITopoNode;
+      const nodeAttrs: NodeStyleAttrs = getNodeAttrs(model);
+      const { entity, alert_all_recorved, is_feedback_root } = model;
       const isRoot = checkIsRoot(entity);
       if (isRoot || is_feedback_root) {
         group.addShape('circle', {
@@ -170,12 +171,14 @@ export function registerTopoNode(truncateByTextWidth: TruncateByTextWidthFn): vo
         });
       }
     },
-    draw(cfg, group) {
-      const { entity, aggregated_nodes, anomaly_count, is_feedback_root } = cfg as ITopoNode;
-      const nodeAttrs: NodeStyleAttrs = getNodeAttrs(cfg as ITopoNode);
+    draw(cfg: ModelConfig, group: IGroup) {
+      // registerNode 回调入参为 ModelConfig，内部断言为业务节点
+      const model = cfg as ITopoNode;
+      const { entity, aggregated_nodes, anomaly_count, is_feedback_root } = model;
+      const nodeAttrs: NodeStyleAttrs = getNodeAttrs(model);
       const isRoot = checkIsRoot(entity);
       const showRoot = isRoot || entity.is_feedback_root;
-      const isAggregated = aggregated_nodes.length > 0;
+      const isAggregated = (aggregated_nodes?.length ?? 0) > 0;
       const nodeShapeWrap = group.addShape('rect', {
         zIndex: 10,
         attrs: {
@@ -332,7 +335,7 @@ export function registerTopoNode(truncateByTextWidth: TruncateByTextWidthFn): vo
       group.sort();
       return nodeShapeWrap;
     },
-    setState(name, value, item) {
+    setState(name: string, value: boolean | string, item: Item) {
       const group = item.getContainer();
       if (name === 'hover') {
         const shape = group.find(e => e.get('name') === 'topo-node-shape');

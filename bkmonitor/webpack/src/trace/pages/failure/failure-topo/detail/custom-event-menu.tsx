@@ -36,7 +36,7 @@ import ExceptionComp from '../../../../components/exception';
 import { handleToEventPage } from '../utils';
 import { getIncidentEventTagDetails } from './use-custom';
 
-import type { IEventTagsItem, IPosition } from '../types';
+import type { IEventTagsItem, IPosition } from '../types/topo';
 import type { ICustomEventDetail, ITargetInfo } from 'monitor-ui/chart-plugins/plugins/caller-line-chart/use-custom';
 
 import './custom-event-menu.scss';

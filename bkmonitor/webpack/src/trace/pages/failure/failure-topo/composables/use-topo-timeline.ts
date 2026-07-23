@@ -43,17 +43,17 @@
  * - emit: Vue 组件 emit 函数
  */
 
-import { type Ref } from 'vue';
+import type { Ref } from 'vue';
 
-import { type Graph } from '@antv/g6';
 import isEqual from 'lodash/isEqual';
 import { random } from 'monitor-common/utils/utils.js';
 
 import ServiceCombo from '../graph/service-combo';
 
-import type { PlayOption } from '../g6-types';
-import type { IEdge, ITopoNode } from '../types';
-import type { GraphAccess, TopoEmitFn } from './use-topo-interaction';
+import type { GraphAccess, TopoEmitFn } from '../types/composable';
+import type { PlayOption, TopoRawDataCache } from '../types/g6';
+import type { IEdge, ITopoNode } from '../types/topo';
+import type { INode } from '@antv/g6';
 
 // ============================================================================
 // 类型定义
@@ -61,8 +61,11 @@ import type { GraphAccess, TopoEmitFn } from './use-topo-interaction';
 
 /** useTopoTimeline 需要从 useTopoData 接收的数据函数子集 */
 export interface TopoTimelineData {
+  /** 拓扑原始数据缓存（含 diff / complete） */
+  topoRawDataCache: Ref<TopoRawDataCache>;
   clearRefreshTimeout: () => void;
-  findEdges: (edges: any[], target: any) => any;
+  /** 在边列表中按 source/target 查找匹配边（与 use-topo-data.findEdges 对齐） */
+  findEdges: (edges: IEdge[], target: IEdge | Pick<IEdge, 'source' | 'target'>) => IEdge | undefined;
   handleChangeRefleshTime: (time: number) => void;
 }
 
@@ -75,7 +78,6 @@ export interface TopoTimelineState {
   showResourceGraph: Ref<boolean>;
   showServiceOverview: Ref<boolean>;
   timelinePosition: Ref<number>;
-  topoRawDataCache: Ref<any>;
 }
 
 // ============================================================================
@@ -117,9 +119,9 @@ export function useTopoTimeline(
     data.clearRefreshTimeout();
     /** 对比node是否已经展示，已经展示还存在diff中说明只是状态变更以及对比每个展示的node都需要判断边关系的node是在展示状态 */
     const { showNodes, content, showEdges, showSubCombos } =
-      state.topoRawDataCache.value.diff[state.timelinePosition.value];
-    const currNodes = state.topoRawDataCache.value.diff[state.timelinePosition.value].content.nodes;
-    const currEdges = state.topoRawDataCache.value.diff[state.timelinePosition.value].content.edges;
+      data.topoRawDataCache.value.diff[state.timelinePosition.value];
+    const currNodes = data.topoRawDataCache.value.diff[state.timelinePosition.value].content.nodes;
+    const currEdges = data.topoRawDataCache.value.diff[state.timelinePosition.value].content.edges;
     const randomStr = random(8);
     let next = false;
 
@@ -131,15 +133,15 @@ export function useTopoTimeline(
     const updateEdges = currEdges;
     // biome-ignore lint/complexity/noForEach: <explanation>
     edges.forEach(edge => {
-      const edgeModel = edge.getModel();
+      // getModel() 返回 G6 配置，findEdges 按业务边模型匹配 source/target
+      const edgeModel = edge.getModel() as IEdge;
       const targetEdge = data.findEdges(updateEdges, edgeModel);
       if (targetEdge) {
         g.updateItem(edge, { ...edge, ...targetEdge });
       } else {
         // 如果当前帧没有该边，尝试从 showEdges 或 complete.edges 中恢复
         const currEdges =
-          data.findEdges(showEdges, edgeModel) ||
-          data.findEdges(state.topoRawDataCache.value.complete.edges, edgeModel);
+          data.findEdges(showEdges, edgeModel) || data.findEdges(data.topoRawDataCache.value.complete.edges, edgeModel);
         if (currEdges && edgeModel && !isEqual(currEdges, edgeModel)) {
           g.updateItem(edge, { ...edge, ...currEdges });
         }
@@ -149,7 +151,7 @@ export function useTopoTimeline(
     // 处理节点的更新，与 handleTimelineChange 保持一致
     // 遍历所有 complete.nodes，确保所有节点状态都正确
     // biome-ignore lint/complexity/noForEach: <explanation>
-    state.topoRawDataCache.value.complete.nodes.forEach(({ id }) => {
+    data.topoRawDataCache.value.complete.nodes.forEach(({ id }) => {
       // 查找节点：与 handleTimelineChange 的逻辑保持一致
       // showNode: 在 showNodes 和 currNodes 的合并数组中查找（用于获取节点数据）
       const showNode = [...showNodes, ...currNodes].reverse().find(item => item.id === id);
@@ -183,7 +185,7 @@ export function useTopoTimeline(
               subComboId: model.subComboId,
             });
             g.setItemState(node, 'show-animate', randomStr);
-            const edges = (node as any).getEdges();
+            const edges = (node as INode).getEdges();
             // biome-ignore lint/complexity/noForEach: <explanation>
             edges.forEach(edge => {
               const edgeModel = edge.getModel();
@@ -198,13 +200,13 @@ export function useTopoTimeline(
             if (diffNode?.is_deleted) {
               // 节点被标记为删除
               node?.hide?.();
-              (node as any)?.getEdges()?.forEach(edge => edge?.hide());
+              (node as INode)?.getEdges()?.forEach(edge => edge?.hide());
             } else {
               // 节点应该显示
               // 如果节点之前是隐藏状态，先显示
               if (model.is_deleted) {
                 node?.show?.();
-                (node as any)?.getEdges()?.forEach(edge => edge?.show());
+                (node as INode)?.getEdges()?.forEach(edge => edge?.show());
               }
               // 更新节点数据
               g.showItem(node);
@@ -229,7 +231,7 @@ export function useTopoTimeline(
       const updateCombo = [...showSubCombos, ...content.sub_combos]
         .reverse()
         .find(item => item.id === entity.entity_id);
-      const nodes = state.topoRawDataCache.value.complete.nodes.filter(node => node.subComboId === id);
+      const nodes = data.topoRawDataCache.value.complete.nodes.filter(node => node.subComboId === id);
       const showNodes = nodes.filter(({ id }) => {
         const node = g.findById(id);
         return node?._cfg.visible;
@@ -314,9 +316,9 @@ export function useTopoTimeline(
         return;
       }
 
-      const len = state.topoRawDataCache.value.diff.length;
+      const len = data.topoRawDataCache.value.diff.length;
       if (currentIndex >= len) {
-        state.timelinePosition.value = state.topoRawDataCache.value.diff.length - 1;
+        state.timelinePosition.value = data.topoRawDataCache.value.diff.length - 1;
         state.isPlay.value = false;
         emit('playing', false);
         data.handleChangeRefleshTime(state.refreshTime.value);
@@ -372,7 +374,7 @@ export function useTopoTimeline(
 
     if (value) {
       // 开始播放
-      const len = state.topoRawDataCache.value.diff.length;
+      const len = data.topoRawDataCache.value.diff.length;
       // 判断是否需要从第0帧重新开始播放
       const isStartFromBeginning = 'timeline' in playOption;
 
@@ -391,7 +393,7 @@ export function useTopoTimeline(
 
       // 如果队列为空，说明已经播放完毕
       if (playQueue.length === 0) {
-        state.timelinePosition.value = state.topoRawDataCache.value.diff.length - 1;
+        state.timelinePosition.value = data.topoRawDataCache.value.diff.length - 1;
         state.isPlay.value = false;
         emit('playing', false);
         data.handleChangeRefleshTime(state.refreshTime.value);
@@ -436,7 +438,7 @@ export function useTopoTimeline(
       playQueue = [];
       clearTimeout(playTime!);
       isProcessingQueue = false;
-      const len = state.topoRawDataCache.value.diff.length;
+      const len = data.topoRawDataCache.value.diff.length;
       // 构建从新位置的下一帧到末尾的播放队列
       // 当前帧会立即渲染，所以队列从下一帧开始
       for (let i = value + 1; i < len; i++) {
@@ -444,7 +446,7 @@ export function useTopoTimeline(
       }
       // 立即渲染当前帧
       state.timelinePosition.value = value;
-      if (state.topoRawDataCache.value.diff[value]) {
+      if (data.topoRawDataCache.value.diff[value]) {
         handleRenderTimeline();
       }
       // 如果队列为空，停止播放
@@ -461,7 +463,7 @@ export function useTopoTimeline(
     }
 
     state.timelinePosition.value = value;
-    if (!state.isPlay.value && state.topoRawDataCache.value.diff[value]) {
+    if (!state.isPlay.value && data.topoRawDataCache.value.diff[value]) {
       /** 切换帧时关闭侧滑面板（除非明确要求保留，如 resize 场景） */
       if (!keepSidePanel) {
         state.showResourceGraph.value = false;
@@ -469,10 +471,10 @@ export function useTopoTimeline(
       }
       /** 直接切换到对应帧时，直接隐藏掉未出现的帧，并更新当前帧每个node的节点数据 */
       /** 注意：需要支持从后往前切换的场景，确保所有节点都按照目标帧的状态来处理 */
-      const { showNodes, content, showEdges, showSubCombos } = state.topoRawDataCache.value.diff[value];
+      const { showNodes, content, showEdges, showSubCombos } = data.topoRawDataCache.value.diff[value];
       const updateEdges = content.edges;
       // biome-ignore lint/complexity/noForEach: <explanation>
-      state.topoRawDataCache.value.complete.nodes.forEach(({ id }) => {
+      data.topoRawDataCache.value.complete.nodes.forEach(({ id }) => {
         // 查找节点：与 handleRenderTimeline 的逻辑保持一致
         // showNode: 在 showNodes 和 content.nodes 的合并数组中查找（用于获取节点数据）
         const showNode = [...showNodes, ...content.nodes].reverse().find(item => item.id === id);
@@ -496,7 +498,7 @@ export function useTopoTimeline(
             // 如果节点之前是隐藏状态，先显示
             if (model.is_deleted) {
               node?.show?.();
-              (node as any)?.getEdges()?.forEach(edge => edge?.show());
+              (node as INode)?.getEdges()?.forEach(edge => edge?.show());
             }
             // 更新节点数据
             g.showItem(node);
@@ -507,7 +509,8 @@ export function useTopoTimeline(
       const edges = g.getEdges();
       // biome-ignore lint/complexity/noForEach: <explanation>
       edges.forEach(edge => {
-        const edgeModel = edge.getModel();
+        // getModel() 返回 G6 配置，findEdges 按业务边模型匹配 source/target
+        const edgeModel = edge.getModel() as IEdge;
 
         const targetEdge = data.findEdges(updateEdges, edgeModel);
         if (targetEdge) {
@@ -515,7 +518,7 @@ export function useTopoTimeline(
         } else {
           const currEdges =
             data.findEdges(showEdges, edgeModel) ||
-            data.findEdges(state.topoRawDataCache.value.complete.edges, edgeModel);
+            data.findEdges(data.topoRawDataCache.value.complete.edges, edgeModel);
           if (currEdges && edgeModel && !isEqual(currEdges, edgeModel)) {
             g.updateItem(edge, { ...edge, ...currEdges });
           }
@@ -529,7 +532,7 @@ export function useTopoTimeline(
         const updateCombo = [...showSubCombos, ...content.sub_combos]
           .reverse()
           .find(item => item.id === entity.entity_id);
-        const nodes = state.topoRawDataCache.value.complete.nodes.filter(node => node.subComboId === id);
+        const nodes = data.topoRawDataCache.value.complete.nodes.filter(node => node.subComboId === id);
         const showNodes = nodes.filter(({ id }) => {
           const node = g.findById(id);
           return node?._cfg.visible;

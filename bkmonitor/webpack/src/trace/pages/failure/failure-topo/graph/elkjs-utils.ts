@@ -25,6 +25,7 @@
  */
 import Elkjs from 'elkjs';
 
+import type { ITopoCombo } from '../types/topo';
 import type { Edge, VirtaulNode } from './format-topo-data';
 
 let subCombosMap: Record<string, number> = {};
@@ -53,7 +54,7 @@ const getRootCombos = data => {
 const defaultLayoutOptions = {
   algorithm: 'stress',
   'elk.direction': 'DOWN',
-  'elk.stress.desiredEdgeLength': 10,
+  'elk.stress.desiredEdgeLength': '10',
   'elk.radial.center': '0,0',
   // // 调节分布每行展示节点数量
   'org.eclipse.elk.aspectRatio': '3',
@@ -451,7 +452,7 @@ const OptimizeLayout = (layouted, data, edges: Edge[]) => {
 };
 
 /** 兼容动态combo数量 */
-const setRootComboStyle = (combos: Array<any>, width, diffWidth = true) => {
+const setRootComboStyle = (combos: ITopoCombo[], width, diffWidth = true) => {
   const rootCombos = getRootCombos({ combos });
   const maxWidth = diffWidth ? Math.max(...rootCombos.map(combo => combo.width ?? 0), width) : width;
   rootCombos.forEach((combo, index) => {
@@ -477,7 +478,7 @@ const getSubComboCountMap = (nodes: any[]) => {
   return nodes.reduce((map, node) => Object.assign(map, { [node.subComboId]: (map[node.subComboId] ?? 0) + 1 }), {});
 };
 
-const resolveSumbCombos = (sub_combos: any[]) => {
+const resolveSumbCombos = (sub_combos: ITopoCombo[]) => {
   const filterCombos = (sub_combos ?? []).filter(combo => filterSubCombo(combo.id));
   // 这里接口给的鬼数据可能乱七八糟，各种重复
   // 前端自己做数据去重吧，靠谱点

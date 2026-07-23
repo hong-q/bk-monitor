@@ -25,15 +25,20 @@
  */
 
 /**
- * topo-edge.ts — 自定义 G6 边注册
- * 从 failure-topo.tsx 中提取，注册 'topo-edge' 和 'topo-edge-loop' 自定义边类型
+ * @file 自定义拓扑边注册
+ * @description 注册 topo-edge / topo-edge-loop，并管理边流动动画定时器
  */
 
 import { registerEdge } from '@antv/g6';
 
 import { createConnectedParallelCurves } from '../utils';
 
-import type { EdgeIntervalItem } from '../g6-types';
+import type { EdgeIntervalItem } from '../types/g6';
+import type { IEdge } from '../types/topo';
+import type { IGroup, Item, ModelConfig } from '@antv/g6';
+
+/** 边业务字段：registerEdge 回调入参仍用官方 ModelConfig，内部再断言 */
+type EdgeBizCfg = IEdge & ModelConfig;
 
 // ============================================================================
 // 边动画定时器管理（模块内部变量）
@@ -57,7 +62,7 @@ export function clearEdgeIntervals(): void {
 
 const edgeUtils = {
   /** 绘制高亮边（选中时显示蓝色平行线） */
-  handelCreateHighlightEdge(shape: any, group: any) {
+  handelCreateHighlightEdge(shape: any, group: IGroup) {
     const offset = shape.attrs.endArrow ? 6 : 0;
     const [left, right, mid] = createConnectedParallelCurves(
       shape.attrs.path,
@@ -102,9 +107,9 @@ const edgeUtils = {
 
   /**
    * 处理边动画（异常边的流动虚线动画）
-   * 注意：edgeInterval 现为模块内部变量，不再通过参数传入
+   * 边动画定时器由模块内 edgeInterval 统一管理
    */
-  handleEdgeAnimation(shape: any, item: any, cfg: any) {
+  handleEdgeAnimation(shape: any, item: Item, cfg: EdgeBizCfg) {
     // biome-ignore lint/complexity/noForEach: <explanation>
     const { is_anomaly, anomaly_score, events, edge_type } = cfg;
     const lineDash = anomaly_score === 0 ? [6] : [10];
@@ -113,7 +118,7 @@ const edgeUtils = {
       let index = 0;
       // 这里改为定时器执行，自带的动画流动速度控制不了
       const interVal: EdgeIntervalItem = {
-        id: cfg.id,
+        id: cfg.id as string,
         timer: setInterval(() => {
           if (item.hasState('highlight')) {
             item.toFront();
@@ -144,7 +149,7 @@ const edgeUtils = {
   },
 
   /** 添加聚合点（聚合边中点显示圆形数字标记） */
-  addAggregationMarkers(cfg: any, group: any) {
+  addAggregationMarkers(cfg: EdgeBizCfg, group: IGroup) {
     if (!cfg.aggregated || !cfg.count) return;
     const shape = group.get('children')[0];
     // 获取路径图形的中点坐标
@@ -178,7 +183,7 @@ const edgeUtils = {
   },
 
   /** 处理边状态变化（highlight / dark / show-animate） */
-  handleEdgeState(name: string, value: any, item: any) {
+  handleEdgeState(name: string, value: boolean | string, item: Item) {
     const model = item.getModel();
     const group = item.getContainer();
     const shape = group.get('children')[0];
@@ -221,17 +226,19 @@ const edgeUtils = {
 // 边类型注册
 // ============================================================================
 
-/** 自定义边类型工厂函数 */
+/** 自定义边类型工厂函数（cfg 保持 G6 ModelConfig，与 registerEdge 签名兼容） */
 const createEdgeConfig = () => ({
-  afterDraw(cfg: any, group: any) {
+  afterDraw(cfg: ModelConfig, group: IGroup) {
     const shape = group.get('children')[0];
-    const item = group.get('item');
-    edgeUtils.handleEdgeAnimation(shape, item, cfg);
-    edgeUtils.addAggregationMarkers(cfg, group);
+    const item = group.get('item') as Item;
+    // 业务边字段从 ModelConfig 断言读取
+    const edgeCfg = cfg as EdgeBizCfg;
+    edgeUtils.handleEdgeAnimation(shape, item, edgeCfg);
+    edgeUtils.addAggregationMarkers(edgeCfg, group);
     // 绘制异常选中的高亮边
     edgeUtils.handelCreateHighlightEdge(shape, group);
   },
-  setState(name: string, value: any, item: any) {
+  setState(name: string, value: boolean | string, item: Item) {
     edgeUtils.handleEdgeState(name, value, item);
   },
   update: undefined,

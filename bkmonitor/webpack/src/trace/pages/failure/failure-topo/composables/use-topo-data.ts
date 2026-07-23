@@ -35,37 +35,28 @@
  * - 视口辅助函数（isItemInView / moveToCenterIfNeeded）
  * - 自动刷新定时器（refreshTimeout）
  *
- * ## 渐进式迁移策略
- * - renderGraph 留在主文件（是数据与交互的桥接函数，Step 10 移到 use-topo-graph）
- * - toFrontAnomalyEdge / clearEdgeState / setHighlightEdge 留在主文件（Step 7 移到 use-topo-interaction）
- *
  * ## 依赖注入
  * - state: 从 useTopoState 接收响应式状态
- * - getGraph: () => Graph | undefined — 获取当前 Graph 实例（解决 let 变量问题）
+ * - graphAccess: GraphAccess — 通过 getGraph() 读取当前 Graph 实例
  * - initGraphCallback: 延迟注册的回调，在 topoRawData.value 赋值后触发初始化（不在 .finally() 中，确保数据已就绪）
  */
 
 import { type Ref, ref as deepRef } from 'vue';
 
-import { type Graph } from '@antv/g6';
 import { incidentTopology } from 'monitor-api/modules/incident';
 import { deepClone, random } from 'monitor-common/utils/utils.js';
 
 import ElkjsUtils from '../graph/elkjs-utils';
-import formatTopoData from '../graph/format-topo-data';
+import formatTopoData, { type NodeArgs } from '../graph/format-topo-data';
 
-import type { ErrorData, TopoRawDataCache } from '../g6-types';
-import type { ITopoData } from '../types';
+import type { GraphAccess } from '../types/composable';
+import type { ErrorData, TopoRawDataCache } from '../types/g6';
+import type { IEdge, IEntity, ITopoCombo, ITopoData, ITopoNode } from '../types/topo';
+import type { Graph } from '@antv/g6';
 
 // ============================================================================
 // 类型定义
 // ============================================================================
-
-/** Graph 实例访问器（解决 graph 是 let 变量的问题） */
-export interface GraphAccess {
-  /** 获取当前 Graph 实例，未初始化时返回 undefined */
-  getGraph: () => Graph | undefined;
-}
 
 /** useTopoData 需要从 useTopoState 接收的状态子集 */
 export interface TopoDataState {
@@ -81,11 +72,30 @@ export interface TopoDataState {
   wrapRef: Ref<HTMLDivElement | undefined>;
 }
 
+export type UseTopoDataReturn = ReturnType<typeof useTopoData>;
+
+/**
+ * formatResponseData 入参：接近完整拓扑的 API raw 结构
+ * 字段均可选，函数内会用默认空数组兜底并就地改写 comboId
+ */
+type FormatResponseInput = Partial<ITopoData> & { sub_combos?: ITopoCombo[] };
+
+/**
+ * 布局计算入参：完整拓扑数据 + 可选 sub_combos（API/缓存帧可能带该字段）
+ * 与 ITopoData 对齐，避免 resolveLayout 继续使用 any
+ */
+type LayoutInput = ITopoData & { sub_combos?: ITopoCombo[] };
+
 // ============================================================================
 // Composable
 // ============================================================================
 
-export type UseTopoDataReturn = ReturnType<typeof useTopoData>;
+/** resolveLayout 的返回结构：ELK 布局结果 + 回写坐标后的拓扑数据 */
+type ResolveLayoutResult = {
+  data: LayoutInput;
+  /** ELK 原始布局结果，具体结构由 ElkjsUtils 决定，此处不强制展开 */
+  layouted: unknown;
+};
 
 export function useTopoData(state: TopoDataState, graphAccess: GraphAccess) {
   // ---------------------------------------------------------------------------
@@ -115,7 +125,7 @@ export function useTopoData(state: TopoDataState, graphAccess: GraphAccess) {
   const aggregateVersion = deepRef<boolean>(false);
 
   // ---------------------------------------------------------------------------
-  // let 变量（非响应式，后续步骤迁移）
+  // 模块内部非响应式变量
   // ---------------------------------------------------------------------------
 
   /** 自动刷新定时器 ID */
@@ -144,37 +154,41 @@ export function useTopoData(state: TopoDataState, graphAccess: GraphAccess) {
   /**
    * 清洗 ComboID 避免重复 ID 导致绘制错误
    * API 返回数据 ComboID 和 nodeID 会重复
+   * @param data 接近 ITopoData 的 API raw（含可选 sub_combos），就地改写节点/combo
    */
-  const formatResponseData = (data: any) => {
+  const formatResponseData = (data: FormatResponseInput) => {
     const { combos = [], nodes = [], sub_combos = [] } = data || {};
     // biome-ignore lint/complexity/noForEach: <explanation>
     nodes.forEach(node =>
       Object.assign(node, {
         width: 90,
         height: 92,
-        comboId: ElkjsUtils.getComboId(node.comboId),
-        subComboId: ElkjsUtils.getComboId(node.subComboId),
+        // getComboId 入参为 string，可选字段统一转字符串或空串
+        comboId: ElkjsUtils.getComboId(node.comboId != null ? String(node.comboId) : ''),
+        subComboId: ElkjsUtils.getComboId(node.subComboId != null ? String(node.subComboId) : ''),
       })
     );
     combos.forEach(formatComboOption);
     sub_combos.forEach(formatSubcomboOption);
   };
 
-  /** 为 sub_combo 添加 ID / comboId / isCombo 标记 */
-  const formatSubcomboOption = (combo: any) => {
+  /** 为 sub_combo 添加 ID / comboId / isCombo 标记（就地 Object.assign，入参用 ITopoCombo） */
+  const formatSubcomboOption = (combo: ITopoCombo) => {
+    // getComboId 入参为 string，ITopoCombo.id 可能为 number，统一转字符串
     Object.assign(combo, {
-      id: ElkjsUtils.getComboId(combo.id),
+      id: ElkjsUtils.getComboId(String(combo.id)),
       isCombo: true,
-      comboId: ElkjsUtils.getComboId(combo.comboId),
+      comboId: ElkjsUtils.getComboId(combo.comboId != null ? String(combo.comboId) : ''),
     });
   };
 
-  /** 为 combo 添加样式、label 配置等展示属性 */
-  const formatComboOption = (combo: any) => {
+  /** 为 combo 添加样式、label 配置等展示属性（就地 Object.assign，入参用 ITopoCombo） */
+  const formatComboOption = (combo: ITopoCombo) => {
+    // getComboId 入参为 string，ITopoCombo.id 可能为 number，统一转字符串
     Object.assign(combo, {
-      id: ElkjsUtils.getComboId(combo.id),
+      id: ElkjsUtils.getComboId(String(combo.id)),
       isCombo: true,
-      comboId: ElkjsUtils.getComboId(combo.comboId),
+      comboId: ElkjsUtils.getComboId(combo.comboId != null ? String(combo.comboId) : ''),
       type: 'rect',
       style: {
         cursor: 'grab',
@@ -261,11 +275,15 @@ export function useTopoData(state: TopoDataState, graphAccess: GraphAccess) {
   // 布局计算
   // ---------------------------------------------------------------------------
 
-  /** ELK 布局计算，返回布局后的数据和布局坐标 */
-  const resolveLayout = (data: any): Promise<any> => {
+  /**
+   * ELK 布局计算，返回布局后的数据和布局坐标
+   * @param data 完整拓扑 + 可选 sub_combos；内部深拷贝后回写坐标
+   */
+  const resolveLayout = (data: LayoutInput): Promise<ResolveLayoutResult> => {
     const graph = graphAccess.getGraph();
-    const copyData = JSON.parse(JSON.stringify(data));
-    const { layoutNodes, edges, nodes } = formatTopoData(copyData);
+    const copyData = JSON.parse(JSON.stringify(data)) as LayoutInput;
+    // LayoutInput 与 formatTopoData 的 NodeArgs 结构兼容，运行时一致，此处做类型适配
+    const { layoutNodes, edges, nodes } = formatTopoData(copyData as unknown as NodeArgs);
     const resolvedData = ElkjsUtils.getKlayGraphData({ nodes: layoutNodes, edges, source: nodes });
     return ElkjsUtils.getLayoutData(resolvedData).then(layouted => {
       ElkjsUtils.updatePositionFromLayouted(layouted, copyData);
@@ -404,9 +422,12 @@ export function useTopoData(state: TopoDataState, graphAccess: GraphAccess) {
   // 边数据处理辅助（供 interaction composable 使用）
   // ---------------------------------------------------------------------------
 
-  /** 处理单个边的公共逻辑，构造边关联节点数据 */
-  const processEdge = (edge: any, nodes: any[], isAggregatedEdge = false) => {
-    const model = deepClone(edge);
+  /**
+   * 处理单个边的公共逻辑，构造边关联节点数据
+   * @returns 带随机 id 与 nodes 的边模型（仍归入 IEdge）
+   */
+  const processEdge = (edge: IEdge, nodes: ITopoNode[], isAggregatedEdge = false): IEdge => {
+    const model = deepClone(edge) as IEdge;
     model.id = `edge-${random(10)}`;
     const getEntityData = (prefix: string) =>
       isAggregatedEdge
@@ -422,6 +443,7 @@ export function useTopoData(state: TopoDataState, graphAccess: GraphAccess) {
 
     const targetModel = nodes.find(item => item.id === model.target);
     const sourceModel = nodes.find(item => item.id === model.source);
+    // 聚合边会用 getEntityData 补齐 entity，再与源/目标节点合并，结果按 ITopoNode 使用
     model.nodes = [
       {
         ...getEntityData('source'),
@@ -433,15 +455,15 @@ export function useTopoData(state: TopoDataState, graphAccess: GraphAccess) {
         ...targetModel,
         events: model.events || [],
       },
-    ];
+    ] as any;
 
     return model;
   };
 
   /** 整合与指定 nodeId 关联的边数据（含聚合边） */
-  const filterEdges = (edges: any[], nodes: any[], nodeId: string) => {
-    const result: any[] = [];
-    const checkAndProcess = (edge: any, isAggregated = false) => {
+  const filterEdges = (edges: IEdge[], nodes: ITopoNode[], nodeId: string): IEdge[] => {
+    const result: IEdge[] = [];
+    const checkAndProcess = (edge: IEdge, isAggregated = false) => {
       if (edge.source === nodeId || edge.target === nodeId) {
         result.push(processEdge(edge, nodes, isAggregated));
       }
@@ -462,8 +484,11 @@ export function useTopoData(state: TopoDataState, graphAccess: GraphAccess) {
   // 查找边辅助函数（供时间轴 composable 使用）
   // ---------------------------------------------------------------------------
 
-  /** 在边列表中查找匹配 source/target 的边 */
-  const findEdges = (edges: any[], target: any) => {
+  /**
+   * 在边列表中查找匹配 source/target 的边
+   * @param target 只需提供 source/target 即可匹配（也可传入完整 IEdge）
+   */
+  const findEdges = (edges: IEdge[], target: IEdge | Pick<IEdge, 'source' | 'target'>): IEdge | undefined => {
     return edges.find(item => item.source === target.source && target.target === item.target);
   };
 

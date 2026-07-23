@@ -26,7 +26,7 @@
  */
 import { type PropType, defineComponent } from 'vue';
 
-import type { IEdge } from '../types';
+import type { IEdge } from '../types/topo';
 
 import './aggregated-edges-list.scss';
 

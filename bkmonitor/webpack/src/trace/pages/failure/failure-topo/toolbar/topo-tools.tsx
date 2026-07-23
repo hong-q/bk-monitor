@@ -30,12 +30,26 @@ import { random } from 'monitor-common/utils/utils';
 import { useI18n } from 'vue-i18n';
 
 import { useIncidentInject } from '../../utils';
-import AggregationSelect from './aggregation-select';
+import AggregationSelect, { type AggregateSwitch } from './aggregation-select';
 import Timeline from './timeline';
 
-import type { TopoRawData } from '../types';
+import type { DiffItem } from '../types/g6';
 
 import './topo-tools.scss';
+
+/** 聚合规则配置（传给拓扑接口 / 父组件） */
+interface AggregationConfig {
+  aggregate_call?: boolean;
+  aggregate_config?: Record<string, EntityAggregateConfig>;
+  aggregate_version?: boolean;
+  auto_aggregate?: boolean;
+}
+
+/** 单实体类型下的手动聚合勾选结果 */
+interface EntityAggregateConfig {
+  aggregate_anomaly: boolean;
+  aggregate_keys: string[];
+}
 
 const fullscreenHelper = (function () {
   // 全屏请求的兼容性封装
@@ -80,8 +94,9 @@ const fullscreenHelper = (function () {
 export default defineComponent({
   name: 'TopoTools',
   props: {
+    /** 时间轴差分帧列表（仅依赖 create_time） */
     topoRawDataList: {
-      type: Array as PropType<TopoRawData[]>,
+      type: Array as PropType<DiffItem[]>,
       default: () => [],
     },
     timelinePlayPosition: {
@@ -117,13 +132,14 @@ export default defineComponent({
     // 调用关系聚合（对应接口字段 aggregate_cluster）
     const aggregateCall = ref(true);
     /** 菜单接口返回的动态聚合开关列表 */
-    const aggregateSwitches = shallowRef<{ [k: string]: any; default: boolean; key: string; name: string }[]>([]);
+    const aggregateSwitches = shallowRef<AggregateSwitch[]>([]);
     /** 动态开关的当前状态 map，key 为 switch.key */
     const switchStates = ref<Record<string, boolean>>({});
     let aggregateIdText = '';
     const isFullscreen = ref(false);
     const { t } = useI18n();
-    const aggregateConfig = ref({});
+    /** 手动聚合勾选生成的 aggregate_config */
+    const aggregateConfig = ref<Record<string, EntityAggregateConfig>>({});
     const timeLine = ref(null);
     const incidentId = useIncidentInject();
     const handleChangeRefleshTime = (value: number) => {
@@ -208,7 +224,7 @@ export default defineComponent({
     });
     /** 设置 Tree 数据的选中状态（仅在手动聚合模式下使用） */
     const setTreeDataChecked = () => {
-      const config = {};
+      const config: Record<string, EntityAggregateConfig> = {};
       treeData.value = treeData.value.map(item => {
         return {
           ...item,
@@ -287,8 +303,9 @@ export default defineComponent({
     const handlePlay = value => {
       emit('play', value);
     };
-    const getAggregationConfigValue = () => {
-      const config: Record<string, any> = {
+    /** 组装传给父组件的聚合配置 */
+    const getAggregationConfigValue = (): AggregationConfig => {
+      const config: AggregationConfig = {
         aggregate_call: aggregateCall.value,
         aggregate_version: aggregateVersion.value,
         auto_aggregate: isAutoAggregate.value,

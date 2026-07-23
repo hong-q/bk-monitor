@@ -40,18 +40,19 @@
  * - state: 从 useTopoState 接收响应式状态
  * - data: 从 useTopoData 接收 topoRawDataCache
  * - interaction: 从 useTopoInteraction 接收 handleViewServiceFromTopo, handleNodeInfoTooltip
- * - tooltipAccess: { setTooltip, getTooltip } — 桥接主文件 let g6Tooltip 变量
- * - graphAccess: { getGraph } — 桥接主文件 let graph 变量
+ * - g6TooltipRef: G6 Tooltip 插件 shallowRef（注册时直接赋值，无 setTooltip 桥接）
+ * - graphAccess: { getGraph }
  */
 
-import type { Ref } from 'vue';
+import type { Ref, ShallowRef } from 'vue';
 
-import { Tooltip } from '@antv/g6';
+import { type IG6GraphEvent, Tooltip } from '@antv/g6';
 import { random } from 'monitor-common/utils/utils.js';
 
-import type { TooltipType } from '../g6-types';
-import type { IEdge, ITopoNode } from '../types';
-import type { GraphAccess, TooltipAccess } from './use-topo-interaction';
+import type { G6TooltipInstance, GraphAccess } from '../types/composable';
+import type { TooltipType, TopoRawDataCache } from '../types/g6';
+import type { IEdge, ITopoNode } from '../types/topo';
+import type { ResourceGraphExpose, TooltipCompExpose } from './use-topo-state';
 
 // ============================================================================
 // 类型定义
@@ -60,7 +61,7 @@ import type { GraphAccess, TooltipAccess } from './use-topo-interaction';
 /** useTopoTooltip 需要从 useTopoData 接收的数据子集 */
 export interface TopoTooltipData {
   /** 拓扑原始数据缓存 */
-  topoRawDataCache: Ref<any>;
+  topoRawDataCache: Ref<TopoRawDataCache>;
 }
 
 /** useTopoTooltip 需要从 useTopoInteraction 接收的交互函数子集 */
@@ -69,9 +70,9 @@ export interface TopoTooltipInteraction {
   handleNodeInfoTooltip: (model: ITopoNode) => string;
   /** 通过主画布 tooltip 打开节点/边概览 */
   handleViewServiceFromTopo: (params: {
-    data: any;
+    data: IEdge | ITopoNode;
     isAggregatedEdge: boolean;
-    sourceNode: any;
+    sourceNode: ITopoNode | null;
     type: TooltipType;
   }) => void;
 }
@@ -82,12 +83,12 @@ export interface TopoTooltipState {
   edgeDetail: Ref<IEdge>;
   /** 是否为点击边产生的 tooltip */
   isClickEdgeItem: Ref<boolean>;
-  /** 资源拓扑组件 ref */
-  resourceGraphRef: Ref<any>;
+  /** 资源拓扑组件 ref（薄接口，与 use-topo-state 对齐） */
+  resourceGraphRef: Ref<ResourceGraphExpose>;
   /** 是否显示资源拓扑 */
   showResourceGraph: Ref<boolean>;
-  /** Tooltip Vue 组件 ref */
-  tooltipCompRef: Ref<any>;
+  /** Tooltip Vue 组件 ref（薄接口，与 use-topo-state 对齐） */
+  tooltipCompRef: Ref<TooltipCompExpose>;
   /** Tooltip 边数据 */
   tooltipsEdge: Ref<IEdge>;
   /** Tooltip 数据模型（节点/边） */
@@ -104,7 +105,8 @@ export function useTopoTooltip(
   state: TopoTooltipState,
   data: TopoTooltipData,
   interaction: TopoTooltipInteraction,
-  tooltipAccess: TooltipAccess & { setTooltip: (tooltip: any) => void },
+  /** G6 Tooltip 插件 shallowRef，注册时直接赋值 */
+  g6TooltipRef: ShallowRef<G6TooltipInstance | undefined>,
   graphAccess: GraphAccess
 ) {
   const graph = () => graphAccess.getGraph();
@@ -120,7 +122,7 @@ export function useTopoTooltip(
       container: document.querySelector('.topo-graph') as HTMLDivElement,
       trigger: 'click',
       itemTypes: ['edge', 'node'],
-      getContent: (e: any) => {
+      getContent: (e: IG6GraphEvent) => {
         const type = e.item.getType();
         const model = e.item.getModel();
         if (type === 'edge') {
@@ -177,7 +179,8 @@ export function useTopoTooltip(
           if (!model.aggregated) {
             interaction.handleViewServiceFromTopo({
               type: 'edge',
-              data: model,
+              // getModel() 返回 G6 配置，此处按业务边模型传入
+              data: model as IEdge,
               sourceNode: null,
               isAggregatedEdge: false,
             });
@@ -185,11 +188,13 @@ export function useTopoTooltip(
         } else {
           state.tooltipsModel.value = model as ITopoNode;
         }
-        state.tooltipsType.value = type;
+        // getType() 返回 ITEM_TYPE，业务侧仅处理 node/edge
+        state.tooltipsType.value = type as TooltipType;
         return state.tooltipCompRef.value.$el as HTMLDivElement;
       },
     });
-    tooltipAccess.setTooltip(tooltipInstance);
+    // 直接写入 shallowRef，供随后 new Graph({ plugins }) 读取
+    g6TooltipRef.value = tooltipInstance;
   };
 
   // ---------------------------------------------------------------------------
@@ -205,11 +210,12 @@ export function useTopoTooltip(
   };
 
   /** Combo 鼠标进入 — 显示被截断的 label tooltip + 反馈根因文本 */
-  const handleComboMouseEnter = (e: any) => {
+  const handleComboMouseEnter = (e: IG6GraphEvent) => {
     const g = graph();
     if (!g) return;
     const { item } = e;
-    const model = item.getModel();
+    // Combo model 含业务自定义 originLabel，与 ITopoNode 交叉以便访问 entity.properties
+    const model = item.getModel() as ITopoNode & { originLabel?: string };
 
     const fullLabel = model.originLabel;
     // 只有被截断的combo label才显示 Tooltip
@@ -226,7 +232,7 @@ export function useTopoTooltip(
       if (comboLabelTooltip) {
         comboLabelTooltip.innerHTML = `
             <p><span class='combo-label-text'>名称：</span>${fullLabel as string}</p>
-            <p><span class='combo-label-text'>类型：</span>${(model.entity as any)?.properties?.entity_category as string}</p>
+            <p><span class='combo-label-text'>类型：</span>${model.entity?.properties?.entity_category as string}</p>
           `;
         const tooltipHeight = comboLabelTooltip.offsetHeight;
         comboLabelTooltip.style.left = `${x}px`;
@@ -245,7 +251,7 @@ export function useTopoTooltip(
   };
 
   /** Combo 鼠标离开 — 隐藏 label tooltip + 反馈根因文本 */
-  const handleComboMouseLeave = (e: any) => {
+  const handleComboMouseLeave = (e: IG6GraphEvent) => {
     const g = graph();
     if (!g) return;
     // 移出隐藏combo label的Tooltip
@@ -288,7 +294,7 @@ export function useTopoTooltip(
   };
 
   /** 节点鼠标进入 — 显示详情 tooltip + Combo 悬停联动 */
-  const handleNodeMouseEnter = (e: any) => {
+  const handleNodeMouseEnter = (e: IG6GraphEvent) => {
     const g = graph();
     if (!g) return;
     const { item } = e;
@@ -354,7 +360,7 @@ export function useTopoTooltip(
   };
 
   /** 节点鼠标离开 — 隐藏详情 tooltip */
-  const handleNodeMouseLeave = (e: any) => {
+  const handleNodeMouseLeave = (e: IG6GraphEvent) => {
     const g = graph();
     if (!g) return;
     // 鼠标移出隐藏node详情Tooltip
@@ -382,8 +388,8 @@ export function useTopoTooltip(
   // ---------------------------------------------------------------------------
 
   /** G6 tooltipchange 事件 — 点击 tips 时关闭右侧资源打开的 tips */
-  const handleTooltipChange = ({ action }: { action: string }) => {
-    if (action === 'show' && state.showResourceGraph.value) {
+  const handleTooltipChange = (e: IG6GraphEvent) => {
+    if (e.action === 'show' && state.showResourceGraph.value) {
       state.resourceGraphRef.value?.hideToolTips?.();
     }
   };
@@ -394,8 +400,7 @@ export function useTopoTooltip(
 
   /** 隐藏 G6 Tooltip 插件（供 handleResize / combo:click 使用） */
   const hideG6Tooltip = () => {
-    const t = tooltipAccess.getTooltip();
-    t?.hide?.();
+    g6TooltipRef.value?.hide?.();
   };
 
   return {

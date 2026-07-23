@@ -36,7 +36,7 @@ import useMetrics from './useMetrics';
 import CustomEventMenu from './custom-event-menu';
 import MetricChart from './metric-chart';
 
-import type { IEventTagsItem, IMetricItem } from '../types';
+import type { IEventTagsItem, IMetricItem } from '../types/topo';
 
 import './metric-view.scss';
 

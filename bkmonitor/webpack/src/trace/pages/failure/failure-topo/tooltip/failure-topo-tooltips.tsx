@@ -35,7 +35,7 @@ import { canJumpByType, handleToLink, typeToLinkHandle } from '../utils';
 import { getApmServiceType, getNodeAttrs } from '../utils';
 import AggregatedEdgesList from './aggregated-edges-list';
 
-import type { IEdge, IncidentDetailData, ITopoNode } from '../types';
+import type { IEdge, IncidentDetailData, ITopoNode } from '../types/topo';
 
 import './failure-topo-tooltips.scss';
 type PopoverInstance = {
@@ -60,8 +60,9 @@ export default defineComponent({
       type: Object as PropType<IEdge>,
       default: () => {},
     },
+    /** 节点 tip 为单个节点；边 tip 场景下可能为 [source, target] */
     model: {
-      type: [Object, Array] as PropType<any>,
+      type: [Object, Array] as PropType<ITopoNode | ITopoNode[]>,
       required: true,
     },
   },
@@ -95,8 +96,8 @@ export default defineComponent({
       activeNode.value = node;
     };
 
-    /** 展示右侧节点/边概览 */
-    const handleViewService = (node: ITopoNode) => {
+    /** 展示右侧节点/边概览（聚合边列表点击时参数为 IEdge） */
+    const handleViewService = (node: IEdge | ITopoNode) => {
       emit('hide');
       emit('viewService', { type: props.type, data: node, sourceNode: props.model, isAggregatedEdge: true });
     };
@@ -119,17 +120,20 @@ export default defineComponent({
 
     /** popover隐藏 */
     const hide = () => {
-      if (!activeNode?.value?.id) {
-        return;
+      // 聚合节点 tooltip 内可能同时打开多个 Popover（用户连续点击列表项后更容易发生）。
+      // 这里主动关闭当前组件内的所有 Popover，避免 activeNode 与实际打开 Popover 不匹配导致无法自动收起。
+      const refs = proxy?.$refs as Record<string, unknown> | undefined;
+      for (const refKey of Object.keys(refs ?? {})) {
+        if (!refKey.startsWith('popover_')) continue;
+        (refs?.[refKey] as PopoverInstance)?.hide?.();
       }
-      (proxy.$refs?.[`popover_${activeNode.value.id}`] as PopoverInstance)?.hide?.();
       activeNode.value = null;
     };
 
     /** 聚合节点的Tooltips */
     const createNodeToolTipList = (node: ITopoNode) => {
       const { aggregated_nodes: aggregatedList, total_count, anomaly_count, entity } = node;
-      const { groupAttrs } = getNodeAttrs(props.model);
+      const { groupAttrs } = getNodeAttrs(node);
       const createNodeItem = node => {
         const isShowRootText = node?.entity?.is_anomaly;
         return (
@@ -289,12 +293,14 @@ export default defineComponent({
       );
     };
 
-    /** 渲染节点的tips */
+    /** 渲染节点的tips（边 tip 时 model 可能是数组，此处不处理） */
     const renderNodeTips = () => {
-      const { aggregated_nodes } = props.model;
+      const model = props.model;
+      if (Array.isArray(model)) return null;
+      const { aggregated_nodes } = model;
       return props.showViewResource && aggregated_nodes.length > 0
-        ? createNodeToolTipList(props.model)
-        : createNodeToolTip(props.model);
+        ? createNodeToolTipList(model)
+        : createNodeToolTip(model);
     };
 
     /** 渲染边的tips */

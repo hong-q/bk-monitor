@@ -25,15 +25,7 @@
  */
 import { type Ref, defineComponent, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 
-import {
-  type ICombo,
-  Arrow,
-  Graph,
-  registerCombo,
-  registerEdge,
-  registerLayout,
-  registerNode,
-} from '@antv/g6';
+import { type ICombo, Arrow, Graph, registerCombo, registerEdge, registerLayout, registerNode } from '@antv/g6';
 import { addListener, removeListener } from '@blueking/fork-resize-detector';
 import { Loading } from 'bkui-vue';
 import { incidentTopologyUpstream } from 'monitor-api/modules/incident';
@@ -42,15 +34,15 @@ import { debounce } from 'throttle-debounce';
 import { useI18n } from 'vue-i18n';
 
 import ExceptionComp from '../../../components/exception';
-import FailureTopoTooltips from '../failure-topo/tooltip/failure-topo-tooltips';
 import { NODE_TYPE_SVG } from '../failure-topo/node-type-svg';
+import FailureTopoTooltips from '../failure-topo/tooltip/failure-topo-tooltips';
 import TopoTooltip from '../failure-topo/tooltip/topo-tooltip-plugin';
 import { getApmServiceType, getNodeAttrs } from '../failure-topo/utils';
 import { checkIsRoot, useIncidentInject } from '../utils';
+import { registerDragCanvasMoveBase, registerScrollCanvasBase } from './g6-behaviors';
 import { createGraphData } from './resource-data';
-import { registerDragCanvasMoveBase, registerScrollCanvasBase, createGetCanvasByPoint } from '../shared/g6-behaviors';
 
-import type { IEdge, ITopoCombo, ITopoData, ITopoNode } from '../failure-topo/types';
+import type { IEdge, ITopoCombo, ITopoData, ITopoNode } from '../failure-topo/types/topo';
 
 import './resource-graph.scss';
 
@@ -591,17 +583,10 @@ export default defineComponent({
         'quadratic'
       );
     };
-    /** 注册共享的画布行为 */
-    const registerCustomBehavior = () => {
-      const getCanvasByPointFn = createGetCanvasByPoint(graph);
-      registerDragCanvasMoveBase({
-        dragMargin: 0,
-        getCanvasByPoint: getCanvasByPointFn,
-      });
-      registerScrollCanvasBase({
-        dragMargin: 0,
-        getCanvasByPoint: getCanvasByPointFn,
-      });
+    /** 注册资源拓扑图行为（拖拽 + 滚动），使用 dragMargin=0（无留白） */
+    const registerSharedBehavior = () => {
+      registerDragCanvasMoveBase({ dragMargin: 0 });
+      registerScrollCanvasBase({ dragMargin: 0 });
     };
     /** 自定义combo */
     const registerCustomCombo = () => {
@@ -1014,7 +999,7 @@ export default defineComponent({
       registerCustomNode();
       registerCustomEdge();
       registerCustomCombo();
-      registerCustomBehavior();
+      registerSharedBehavior();
       registerCustomTooltip();
       registerCustomLayout();
       graph = new Graph({
@@ -1427,6 +1412,7 @@ export default defineComponent({
             model={this.tooltipsModel}
             showViewResource={false}
             type={this.tooltipsType}
+            onHide={this.hideToolTips}
             onViewService={this.handleViewService}
           />
         </div>

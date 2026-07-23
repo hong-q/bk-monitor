@@ -33,6 +33,13 @@ import ExceptionComp from '../../../../components/exception';
 
 import './aggregation-select.scss';
 
+/** 聚合开关项（菜单接口 aggregate_switches） */
+export interface AggregateSwitch {
+  default: boolean;
+  key: string;
+  name: string;
+}
+
 export default defineComponent({
   name: 'AggregationSelect',
   props: {
@@ -50,7 +57,7 @@ export default defineComponent({
     },
     /** 菜单接口返回的动态聚合开关列表 */
     aggregateSwitches: {
-      type: Array as PropType<{ [k: string]: any; default: boolean; key: string; name: string }[]>,
+      type: Array as PropType<AggregateSwitch[]>,
       default: () => [],
     },
   },

@@ -36,7 +36,7 @@ import AggregatedEdgesList from '../tooltip/aggregated-edges-list';
 import { canJumpByType, getApmServiceType, handleToLink, truncateText, typeToLinkHandle } from '../utils';
 import MetricView from './metric-view';
 
-import type { ActiveTab, IEdge, IncidentDetailData, ITopoNode } from '../types';
+import type { ActiveTab, IEdge, IncidentDetailData, ITopoNode } from '../types/topo';
 
 import './node-info.scss';
 
@@ -57,6 +57,16 @@ export default defineComponent({
     nodeActiveTab: {
       type: String as PropType<ActiveTab>,
       default: 'metric',
+    },
+    /** 自动刷新间隔（透传 MetricView） */
+    refreshTime: {
+      type: Number,
+      default: -1,
+    },
+    /** 是否展示概览侧滑（透传 MetricView） */
+    showServiceOverview: {
+      type: Boolean,
+      default: false,
     },
   },
   emits: [
@@ -348,8 +358,8 @@ export default defineComponent({
       );
     };
 
-    /** 点击展示边概览 */
-    const showEdgeDetail = (node: ITopoNode) => {
+    /** 点击展示边概览（聚合边列表点击，参数为 IEdge） */
+    const showEdgeDetail = (node: IEdge | ITopoNode) => {
       emit('showEdgeDetail', node);
     };
 
@@ -422,9 +432,10 @@ export default defineComponent({
           {this.activeTab === 'metric' ? (
             <MetricView
               data={this.model}
-              type='node'
-              {...this.$attrs}
               getMetricsDataLength={this.handleMetricChange}
+              refreshTime={this.refreshTime}
+              showServiceOverview={this.showServiceOverview}
+              type='node'
             />
           ) : (
             <div class='aggregated-edges-wrap'>

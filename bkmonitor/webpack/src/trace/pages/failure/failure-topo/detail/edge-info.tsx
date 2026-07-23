@@ -34,15 +34,26 @@ import { NODE_TYPE_ICON } from '../node-type-svg';
 import { canJumpByType, getApmServiceType, handleToLink } from '../utils';
 import MetricView from './metric-view';
 
-import type { IncidentDetailData, ITopoNode } from '../types';
+import type { IEdge, IncidentDetailData, ITopoNode } from '../types/topo';
 
 import './edge-info.scss';
 
 export default defineComponent({
   props: {
+    /** 当前激活的边数据 */
     activeEdge: {
-      type: Object as PropType<any>,
+      type: Object as PropType<IEdge>,
       required: true,
+    },
+    /** 自动刷新间隔（透传 MetricView） */
+    refreshTime: {
+      type: Number,
+      default: -1,
+    },
+    /** 是否展示概览侧滑（透传 MetricView） */
+    showServiceOverview: {
+      type: Boolean,
+      default: false,
     },
   },
   setup(props) {
@@ -191,8 +202,9 @@ export default defineComponent({
           <div class='edge-metrics_main'>
             <MetricView
               data={this.activeEdge}
+              refreshTime={this.refreshTime}
+              showServiceOverview={this.showServiceOverview}
               type='edge'
-              {...this.$attrs}
             />
           </div>
         </div>

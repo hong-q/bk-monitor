@@ -33,23 +33,16 @@
  * - 边高亮交互（handleHighlightEdge, setHighlightEdge, clearEdgeState, toFrontAnomalyEdge, clearAllStats）
  * - 反馈根因交互（handleFeedBack, handleFeedBackChange, feedbackIncidentRootApi）
  * - 缩放交互（handleZoomChange, handleResetZoom, handleUpdateZoom）
- * - UI 控制交互（handleCollapseChange, handleShowLegend, handleHideToolTips, handleHideTooltips）
- * - 详情跳转交互（handleToDetail, handleToDetailSlider, handleToDetailTab, handleRootToSpan, goToTracePage）
+ * - UI 控制交互（handleCollapseChange, handleShowLegend, handleHideTooltips）
+ * - 详情跳转交互（handleToDetailSlider, handleToDetailTab, handleRootToSpan, goToTracePage）
  * - 聚合配置交互（handleUpdateAggregateConfig）
  * - 导航计算属性（navSelectNode）
  * - 辅助函数（handleNodeInfoTooltip, getCanvasByPoint, moveComboLabelPosition）
  *
- * ## 渐进式迁移策略
- * - renderGraph 留在主文件（是数据与交互的桥接函数，Step 10 移到 use-topo-graph）
- * - registerCustomTooltip 留在主文件（Step 9 移到 use-topo-tooltip）
- * - initGraph 事件绑定留在主文件（Step 10 移到 use-topo-graph）
- *
  * ## 依赖注入
  * - state: 从 useTopoState 接收响应式状态
  * - data: 从 useTopoData 接收数据和函数
- * - getGraph: () => Graph | undefined — 获取当前 Graph 实例（解决 let 变量问题）
- * - getTooltip: () => any — 获取当前 Tooltip 实例（解决 let 变量问题）
- * - renderGraphCallback: 渲染图表函数（主文件中定义，Step 10 内化）
+ * - graphAccess / tooltipAccess / renderGraphAccess: 见 types/composable.ts
  * - emit: Vue 组件 emit 函数
  */
 
@@ -60,36 +53,18 @@ import { cloneDeep } from 'lodash';
 import { feedbackIncidentRoot } from 'monitor-api/modules/incident';
 
 import { checkIsRoot } from '../../utils';
+import { getComboCanvasBounds } from '../graph/get-canvas-by-point';
 import { typeToLinkHandle } from '../utils';
 
-import type { DetailType, TooltipType } from '../g6-types';
-import type { CanvasByPointResult, ComboLabelPoint } from '../g6-types';
-import type { IEntity, IncidentDetailData, ITopoData, ITopoNode } from '../types';
-import type { IEdge } from '../types';
-import type { Graph } from '@antv/g6';
+import type { GraphAccess, RenderGraphAccess, TooltipAccess, TopoEmitFn } from '../types/composable';
+import type { ComboLabelPoint, DetailType, NavSelectNodeItem, TooltipType, TopoRawDataCache } from '../types/g6';
+import type { IEdge, IEntity, IncidentDetailData, ITopoData, ITopoNode } from '../types/topo';
+import type { ResourceGraphExpose, TooltipCompExpose } from './use-topo-state';
+import type { Graph, ICombo, Item } from '@antv/g6';
 
 // ============================================================================
 // 类型定义
 // ============================================================================
-
-/** Graph 实例访问器（解决 graph 是 let 变量的问题） */
-export interface GraphAccess {
-  getGraph: () => Graph | undefined;
-}
-/** renderGraph 回调（主文件中定义，Step 10 内化） */
-export interface RenderGraphAccess {
-  renderGraphCallback: (data?: any, renderComplete?: boolean) => void;
-}
-
-/** G6 Tooltip 插件实例访问器（解决 g6Tooltip 是 let 变量的问题） */
-export interface TooltipAccess {
-  getTooltip: () => any;
-}
-
-/** FailureTopo 组件 emits 事件类型（与 defineComponent emits 保持一致） */
-export type TopoEmitEvent = 'changeSelectNode' | 'closeCollapse' | 'playing' | 'refresh' | 'toDetail' | 'toDetailTab';
-
-export type TopoEmitFn = (event: TopoEmitEvent, ...args: any[]) => void;
 
 /** useTopoInteraction 需要从 useTopoData 接收的数据子集 */
 export interface TopoInteractionData {
@@ -98,9 +73,9 @@ export interface TopoInteractionData {
   aggregateVersion: Ref<boolean>;
   autoAggregate: Ref<boolean>;
   topoRawData: Ref<ITopoData | null>;
-  topoRawDataCache: Ref<any>;
-  filterEdges: (edges: any[], nodes: any[], nodeId: string) => any[];
-  findEdges: (edges: any[], target: any) => any;
+  topoRawDataCache: Ref<TopoRawDataCache>;
+  filterEdges: (edges: IEdge[], nodes: ITopoNode[], nodeId: string) => IEdge[];
+  findEdges: (edges: IEdge[], target: IEdge) => IEdge | undefined;
   getGraphData: (isAutoRefresh?: boolean) => Promise<void>;
   handleChangeRefleshTime: (time: number) => void;
   moveToCenterIfNeeded: (graph: Graph, itemId: string, containerWidth: number, containerHeight: number) => void;
@@ -111,7 +86,7 @@ export interface TopoInteractionState {
   bkzIds: Ref<string[]>;
   curLinkedEdges: Ref<IEdge[]>;
   // Misc state
-  detailInfo: Ref<Record<string, any>>;
+  detailInfo: Ref<ITopoNode | Record<string, unknown>>;
   detailType: Ref<DetailType>;
   edgeDetail: Ref<IEdge>;
   // Feedback state
@@ -127,17 +102,17 @@ export interface TopoInteractionState {
   nodeEntityName: Ref<string>;
   resizeCacheCallback: Ref<(() => void) | null>;
   resourceEdgeId: Ref<string>;
-  resourceGraphRef: Ref<any>;
+  resourceGraphRef: Ref<ResourceGraphExpose>;
   resourceNodeId: Ref<string>;
   rootComboMovePoint: Ref<ComboLabelPoint>;
-  selectNode: Ref<any[]>;
+  selectNode: Ref<ReadonlyArray<number | string>>;
   showLegend: Ref<boolean>;
   showResourceGraph: Ref<boolean>;
   showServiceOverview: Ref<boolean>;
   showViewResource: Ref<boolean>;
   timelinePosition: Ref<number>;
   // DOM refs
-  tooltipCompRef: Ref<any>;
+  tooltipCompRef: Ref<TooltipCompExpose>;
   tooltipsEdge: Ref<IEdge>;
   // Tooltip state
   tooltipsModel: Ref<ITopoNode | ITopoNode[]>;
@@ -146,21 +121,19 @@ export interface TopoInteractionState {
   zoomValue: Ref<number>;
   // Hooks
   t: (...args: any[]) => string;
-  updateAlarmDetailData: (params: any) => void;
+  updateAlarmDetailData: (params: { bk_biz_id?: number; id?: string }) => void;
 }
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-/** G6 默认缩放级别下限，数值 / 10 为真实结果值 */
+/** G6 Graph.minZoom 下限（真实缩放比，如 0.2 表示 20%）；勿与 zoomValue（值/10）混用 */
 export const MIN_ZOOM = 0.2;
 
 // ============================================================================
 // Composable
 // ============================================================================
-
-export type UseTopoInteractionReturn = ReturnType<typeof useTopoInteraction>;
 
 export function useTopoInteraction(
   state: TopoInteractionState,
@@ -178,9 +151,10 @@ export function useTopoInteraction(
   // ---------------------------------------------------------------------------
 
   /** 根据左侧选中节点组计算出画布高亮节点信息 */
-  const navSelectNode = computed(() => {
-    const val = [...state.selectNode.value];
-    const rootNode: { entity_name: string; entityId: string; id: string }[] = [];
+  const navSelectNode = computed((): NavSelectNodeItem[] => {
+    // Vue Array prop 可能含 number，统一转 string 再与节点 id 比较
+    const val = [...state.selectNode.value].map(String);
+    const rootNode: NavSelectNodeItem[] = [];
     if (!val.length) return rootNode;
     topoData.topoRawData.value?.nodes?.forEach?.(node => {
       if (val.includes(node.id)) {
@@ -203,15 +177,8 @@ export function useTopoInteraction(
   // 辅助函数（供 initGraph / renderGraph 使用）
   // ---------------------------------------------------------------------------
 
-  /** 获取相对位置 */
-  const getCanvasByPoint = combo => {
-    const g = graph();
-    const comboBBox = combo.getBBox();
-    return {
-      topLeft: g.getCanvasByPoint(comboBBox.x, comboBBox.y),
-      bottomRight: g.getCanvasByPoint(comboBBox.x + comboBBox.width, comboBBox.y + comboBBox.height),
-    } satisfies CanvasByPointResult;
-  };
+  /** 获取 combo 在画布坐标系下的包围盒边界（包装 getComboCanvasBounds） */
+  const getCanvasByPoint = (combo: ICombo) => getComboCanvasBounds(combo, graph()!);
 
   /** 拖拽时设置 combo label 的位置 */
   const moveComboLabelPosition = (point: { x?: number; y?: number }) => {
@@ -224,7 +191,7 @@ export function useTopoInteraction(
     });
   };
 
-  /** 线置于顶层 */
+  /** 将所有边置于顶层 */
   const toFrontAnomalyEdge = () => {
     const g = graph();
     const edges = g.getEdges();
@@ -235,7 +202,7 @@ export function useTopoInteraction(
   };
 
   /** 清除边状态 */
-  const clearEdgeState = (item: any, highlight = true) => {
+  const clearEdgeState = (item: Item, highlight = true) => {
     const g = graph();
     g.getEdges().forEach(edge => {
       g.clearItemStates(edge, ['dark', highlight && 'highlight']);
@@ -399,46 +366,59 @@ export function useTopoInteraction(
   // ---------------------------------------------------------------------------
 
   /** 通过主画布的 tooltip 打开节点/边概览 */
-  const handleViewServiceFromTopo = ({ type, data: tooltipData, sourceNode, isAggregatedEdge }) => {
+  const handleViewServiceFromTopo = ({
+    type,
+    data: tooltipData,
+    sourceNode,
+    isAggregatedEdge,
+  }: {
+    data: IEdge | ITopoNode;
+    isAggregatedEdge: boolean;
+    sourceNode: ITopoNode | ITopoNode[] | null;
+    type: DetailType;
+  }) => {
     const g = graph();
     const t = g6Tooltip();
     if (type === 'node') {
-      setHighlightEdge(false, sourceNode.id);
+      const nodeData = tooltipData as ITopoNode;
+      const srcNode = sourceNode as ITopoNode;
+      setHighlightEdge(false, srcNode.id);
       if (!state.showServiceOverview.value) {
         state.showServiceOverview.value = true;
       } else {
-        const node = g.findById(sourceNode.id);
+        const node = g.findById(srcNode.id);
         g.setItemState(node, 'running', true);
       }
       // 如果之前有选中的节点且不是当前节点，取消其 'running' 状态
-      if (state.resourceNodeId.value && state.resourceNodeId.value !== sourceNode.id) {
+      if (state.resourceNodeId.value && state.resourceNodeId.value !== srcNode.id) {
         const node = g.findById(state.resourceNodeId.value);
         g.setItemState(node, 'running', false);
       }
 
-      state.nodeDetail.value = tooltipData;
+      state.nodeDetail.value = nodeData;
       const { edges = [], nodes = [] } = topoData.topoRawDataCache.value.complete;
-      state.curLinkedEdges.value = topoData.filterEdges(edges, nodes, tooltipData.id);
+      state.curLinkedEdges.value = topoData.filterEdges(edges, nodes, nodeData.id);
 
       // 保存当前选中节点的ID
-      state.resourceNodeId.value = sourceNode.id;
-      state.nodeEntityId.value = tooltipData?.entity?.entity_id || tooltipData?.model?.entity?.entity_id;
-      emit('changeSelectNode', sourceNode.id);
+      state.resourceNodeId.value = srcNode.id;
+      // 部分来源节点会把实体挂在 model 上
+      const nodeWithModel = nodeData as ITopoNode & { model?: { entity?: IEntity } };
+      state.nodeEntityId.value = nodeData?.entity?.entity_id || nodeWithModel?.model?.entity?.entity_id;
+      emit('changeSelectNode', srcNode.id);
     } else {
       if (!state.showServiceOverview.value) {
         state.showServiceOverview.value = true;
       }
-      state.edgeDetail.value = tooltipData;
+      state.edgeDetail.value = tooltipData as IEdge;
       state.isClickEdgeItem.value = true;
       // 处理聚合边，聚合边只有明确选中才高亮
       if (isAggregatedEdge) {
         const edges = g.getEdges();
+        const srcNodes = sourceNode as ITopoNode[];
         // 遍历每个边，查找匹配的属性
         const edge = edges.find(edge => {
           const model = edge.getModel();
-          return (
-            model.source === sourceNode?.[0]?.entity?.entity_id && model.target === sourceNode?.[1]?.entity?.entity_id
-          );
+          return model.source === srcNodes?.[0]?.entity?.entity_id && model.target === srcNodes?.[1]?.entity?.entity_id;
         });
         if (!edge.hasState('highlight')) {
           clearEdgeState(edge);
@@ -454,7 +434,7 @@ export function useTopoInteraction(
   };
 
   /** 通过资源拓扑的 tooltip 打开节点/边概览 */
-  const handleViewServiceFromResource = ({ type, data: tooltipData }) => {
+  const handleViewServiceFromResource = ({ type, data: tooltipData }: { data: ITopoNode; type: DetailType }) => {
     if (type === 'node') {
       if (!state.showServiceOverview.value) {
         state.showServiceOverview.value = true;
@@ -472,18 +452,25 @@ export function useTopoInteraction(
     const g = graph();
     // biome-ignore lint/complexity/noForEach: <explanation>
     g.getNodes().forEach(node => {
-      const model = node.getModel();
+      const model = node.getModel() as ITopoNode;
       if ((model.entity as { entity_id: string })?.entity_id === state.nodeEntityId.value) {
         state.nodeDetail.value = model;
         state.detailType.value = 'node';
         const { edges = [], nodes = [] } = topoData.topoRawDataCache.value.complete;
-        state.curLinkedEdges.value = topoData.filterEdges(edges, nodes, model.id);
+        state.curLinkedEdges.value = topoData.filterEdges(edges, nodes, model.id as string);
       }
     });
   };
 
-  /** 打开资源拓朴 */
-  const handleViewResource = ({ sourceNode, node }) => {
+  /** 打开资源拓扑 */
+  const handleViewResource = ({
+    sourceNode,
+    node,
+  }: {
+    /** 资源图节点可能带 model 包装 */
+    node: ITopoNode & { model?: { entity?: IEntity } };
+    sourceNode: ITopoNode;
+  }) => {
     const g = graph();
     const t = g6Tooltip();
     if (!state.showResourceGraph.value) {
@@ -541,11 +528,11 @@ export function useTopoInteraction(
   };
 
   /** 反馈新根因，反馈后需要重新调用接口拉取数据 */
-  const handleFeedBack = model => {
+  const handleFeedBack = (model: ITopoNode) => {
     const t = g6Tooltip();
     state.tooltipCompRef.value?.hide?.();
     t?.hide?.();
-    state.feedbackModel.value = model;
+    state.feedbackModel.value = model as { entity: IEntity };
     if (model.is_feedback_root) {
       feedbackIncidentRootApi(true);
       return;
@@ -584,6 +571,8 @@ export function useTopoInteraction(
   // ---------------------------------------------------------------------------
 
   const handleResetZoom = () => {
+    // playing 期间禁止重置比例
+    if (state.isPlay.value) return;
     const g = graph();
     state.zoomValue.value = 10;
     g.zoomTo(1);
@@ -630,33 +619,27 @@ export function useTopoInteraction(
     localStorage.setItem('showLegend', String(state.showLegend.value));
   };
 
-  /** 右侧资源图 tips 打开时，左侧 tips 关闭 */
-  const handleHideToolTips = () => {
-    const t = g6Tooltip();
-    state.tooltipCompRef?.value?.hide?.();
-    t?.hide?.();
-  };
-
-  /** 关闭左侧 tips */
+  /** 关闭左侧 Vue tips + G6 tooltip（资源图 tips 打开时也会调用） */
   const handleHideTooltips = () => {
-    const t = g6Tooltip();
     state.tooltipCompRef.value?.hide?.();
-    t?.hide?.();
+    g6Tooltip()?.hide?.();
   };
 
   // ---------------------------------------------------------------------------
   // 详情跳转交互
   // ---------------------------------------------------------------------------
 
-  const handleToDetailSlider = node => {
+  const handleToDetailSlider = (node: ITopoNode) => {
     state.detailInfo.value = node;
-    const alarmData = cloneDeep(node);
+    // clone 后补充告警面板所需字段
+    const alarmData = cloneDeep(node) as ITopoNode & { id?: string; nodeId?: string };
     alarmData.nodeId = node.id;
     alarmData.id = node.alert_ids[0];
     // window.__BK_WEWEB_DATA__?.showDetailSlider?.(alarmData);
     alarmData.id &&
       state.updateAlarmDetailData({
-        bk_biz_id: alarmData.bk_biz_id ?? window.cc_biz_id ?? window.bk_biz_id,
+        // ITopoNode.bk_biz_id 为 string，告警面板入参为 number；保持原运行时取值
+        bk_biz_id: (alarmData.bk_biz_id ?? window.cc_biz_id ?? window.bk_biz_id) as number,
         id: alarmData.id,
       });
   };
@@ -682,7 +665,7 @@ export function useTopoInteraction(
     window.open(`${baseUrl}#${linkHandleByType.path()}?${queryString}`, '_blank');
   };
 
-  const handleToDetailTab = node => {
+  const handleToDetailTab = (node: ITopoNode) => {
     const { alert_display, alert_ids } = node;
     const name = alert_display?.alert_name || '';
     const len = alert_ids.length;
@@ -725,7 +708,6 @@ export function useTopoInteraction(
     // UI 控制交互
     handleCollapseChange,
     handleShowLegend,
-    handleHideToolTips,
     handleHideTooltips,
     // 详情跳转交互
     handleToDetailSlider,

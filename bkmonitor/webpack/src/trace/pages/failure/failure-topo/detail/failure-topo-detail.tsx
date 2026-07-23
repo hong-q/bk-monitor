@@ -31,7 +31,7 @@ import ExceptionComp from '../../../../components/exception';
 import EdgeInfo from './edge-info';
 import NodeInfo from './node-info';
 
-import type { ActiveTab, IEdge } from '../types';
+import type { ActiveTab, IEdge, ITopoNode } from '../types/topo';
 
 import './failure-topo-detail.scss';
 
@@ -53,13 +53,24 @@ export default defineComponent({
       type: Object as PropType<IEdge>,
       default: () => {},
     },
+    /** 当前选中的节点数据 */
     model: {
-      type: Object as PropType<any>,
+      type: Object as PropType<ITopoNode>,
       required: true,
     },
     linkedEdges: {
       type: Array as PropType<IEdge[]>,
       default: () => [],
+    },
+    /** 自动刷新间隔（透传给 NodeInfo / EdgeInfo → MetricView） */
+    refreshTime: {
+      type: Number,
+      default: -1,
+    },
+    /** 是否展示节点/边概览侧滑（透传） */
+    showServiceOverview: {
+      type: Boolean,
+      default: false,
     },
   },
   emits: [
@@ -208,15 +219,17 @@ export default defineComponent({
             {this.currentType === 'edge' ? (
               <EdgeInfo
                 activeEdge={this.activeEdge}
-                {...this.$attrs}
+                refreshTime={this.refreshTime}
+                showServiceOverview={this.showServiceOverview}
               />
             ) : (
               <NodeInfo
+                v-model:nodeActiveTab={this.nodeActiveTab}
                 linkedEdges={this.linkedEdges}
                 model={this.model}
+                refreshTime={this.refreshTime}
+                showServiceOverview={this.showServiceOverview}
                 showViewResource={this.showViewResource}
-                {...this.$attrs}
-                v-model:nodeActiveTab={this.nodeActiveTab}
                 onFeedBack={this.handleFeedBack}
                 onShowEdgeDetail={this.handleShowEdgeDetail}
                 onToDetail={this.handleToDetail}

@@ -23,9 +23,19 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { type ICombo, registerBehavior } from '@antv/g6';
 
-import type { ComboLabelPoint, DragCanvasBehaviorContext, DragCanvasComboRect } from '../../g6-types';
+/**
+ * @file 画布拖拽行为
+ * @description 注册 drag-canvas-move：根 combo 区域拖动画布，含边界留白与 combo label 位置同步
+ */
+import { type ICombo, type IG6GraphEvent, registerBehavior } from '@antv/g6';
+
+import type {
+  CanvasByPointResult,
+  ComboLabelPoint,
+  DragCanvasBehaviorContext,
+  DragCanvasComboRect,
+} from '../../types/g6';
 
 /** 增加画布离画布上下左右的留白区域 */
 const GRAPH_DRAG_MARGIN = 100;
@@ -34,14 +44,13 @@ export interface DragCanvasMoveOptions {
   /** 根 combo 拖拽后的 label 位置 (Ref) */
   rootComboMovePoint: { value: ComboLabelPoint };
   /** 获取 combo 的画布坐标范围 */
-  getCanvasByPoint: (combo: any) => { bottomRight: any; topLeft: any };
+  getCanvasByPoint: (combo: ICombo) => CanvasByPointResult;
   /** 移动 combo label 位置的函数 */
   moveComboLabelPosition: (point: { x?: number; y?: number }) => void;
 }
 
 /**
- * 注册自定义拖拽行为 - failure-topo 扩展版
- * 在共享基础版之上添加了 combo label 联动逻辑
+ * 注册自定义拖拽行为
  */
 export function registerDragCanvasMove(options: DragCanvasMoveOptions): void {
   const { rootComboMovePoint, moveComboLabelPosition, getCanvasByPoint } = options;
@@ -56,7 +65,7 @@ export function registerDragCanvasMove(options: DragCanvasMoveOptions): void {
         mouseleave: 'onMouseLeave',
       };
     },
-    onMouseEnter(this: DragCanvasBehaviorContext, e: any) {
+    onMouseEnter(this: DragCanvasBehaviorContext, e: IG6GraphEvent) {
       const itemType = e?.item?.getType();
       const model = e?.item?.getModel();
       /** 子combo/节点/和边不响应拖动 */
@@ -69,7 +78,7 @@ export function registerDragCanvasMove(options: DragCanvasMoveOptions): void {
       this.comboRect = { el };
       this.comboRect.el.style.cursor = 'grab';
     },
-    onMouseDown(this: DragCanvasBehaviorContext, e: any) {
+    onMouseDown(this: DragCanvasBehaviorContext, e: IG6GraphEvent) {
       const itemType = e?.item?.getType();
       const model = e?.item?.getModel();
       if (['node', 'edge'].includes(itemType) || (itemType === 'combo' && model?.parentId)) {
@@ -82,10 +91,10 @@ export function registerDragCanvasMove(options: DragCanvasMoveOptions): void {
       this.comboRect.el.style.cursor = 'grabbing';
       this.dragging = true;
 
-      const combos = this.graph.getCombos().filter((combo: any) => !combo.getModel().parentId);
+      const combos = this.graph.getCombos().filter((combo: ICombo) => !combo.getModel().parentId);
       let xCombo = combos[0];
       let xComboWidth = 0;
-      combos.forEach((combo: any) => {
+      combos.forEach((combo: ICombo) => {
         const { width } = combo.getBBox();
         if (width > xComboWidth) {
           xCombo = combo;
@@ -111,7 +120,7 @@ export function registerDragCanvasMove(options: DragCanvasMoveOptions): void {
         height: this.graph.getHeight() + 20,
       };
     },
-    onMouseMove(this: DragCanvasBehaviorContext, e: any) {
+    onMouseMove(this: DragCanvasBehaviorContext, e: IG6GraphEvent) {
       if (this.dragging) {
         const comboRect = this.comboRect as DragCanvasComboRect & {
           bottomCombo: ICombo;
@@ -121,7 +130,8 @@ export function registerDragCanvasMove(options: DragCanvasMoveOptions): void {
           width: number;
           xCombo: ICombo;
         };
-        let { movementX, movementY } = e.originalEvent;
+        // originalEvent 运行时为 MouseEvent，G6 类型标为 Event
+        let { movementX, movementY } = e.originalEvent as MouseEvent;
         // 大于零向上拖动
         if (movementY < 0) {
           const { bottomRight } = getCanvasByPoint(comboRect.bottomCombo);
@@ -150,23 +160,21 @@ export function registerDragCanvasMove(options: DragCanvasMoveOptions): void {
         this.graph.translate(movementX, movementY);
       }
     },
-    onMouseUp(this: DragCanvasBehaviorContext, e: any) {
+    onMouseUp(this: DragCanvasBehaviorContext, e: IG6GraphEvent) {
       if (!this.dragging) {
         return;
       }
       this.dragging = false;
-      e.item &&
-        e.item.getType() === 'combo' &&
+      e.item?.getType() === 'combo' &&
         this.graph.updateItem(e.item, {
           style: { cursor: 'grab' },
         });
       this.comboRect.el.style.cursor = 'grab';
       rootComboMovePoint.value.x && moveComboLabelPosition({ x: rootComboMovePoint.value.x });
     },
-    onMouseLeave(this: DragCanvasBehaviorContext, e: any) {
+    onMouseLeave(this: DragCanvasBehaviorContext, e: IG6GraphEvent) {
       if (this.dragging) {
-        e.item &&
-          e.item.getType() === 'combo' &&
+        e.item?.getType() === 'combo' &&
           this.graph.updateItem(e.item, {
             style: { cursor: 'grab' },
           });

@@ -26,7 +26,7 @@
 
 /**
  * @file 拓扑图核心状态管理 Composable
- * @description 负责管理 FailureTopo 组件的所有响应式状态
+ * @description 负责管理 FailureTopo 组件的共享响应式状态（不含拓扑数据缓存）
  *
  * ## 职责
  * - 管理所有 inject / computed / ref / shallowRef 声明
@@ -34,8 +34,7 @@
  * - 管理 UI 控制状态、数据缓存、tooltip 状态、时间轴状态等
  * - 管理 Graph 实例和 Tooltip 插件实例的 shallowRef
  *
- * ## 渐进式迁移策略
- * 当前包含全部响应式状态。领域专属逻辑已迁移到各自的 composable：
+ * ## 相关 composable
  * - use-topo-data: 数据获取与布局计算
  * - use-topo-interaction: 交互 handler
  * - use-topo-timeline: 时间轴播放
@@ -43,25 +42,42 @@
  * - use-topo-graph: Graph 初始化 + 事件绑定 + resize + 生命周期
  */
 
-import { type Ref, type ShallowRef, computed, ref as deepRef, inject, shallowRef } from 'vue';
+import { type Ref, type ShallowRef, computed, ref as deepRef, inject, shallowRef, toRef } from 'vue';
 
-import { type Graph } from '@antv/g6';
 import { useI18n } from 'vue-i18n';
 
 import { incidentAlarmDetailInject } from '../../composables/use-alarm-detail';
 import { useIncidentInject } from '../../utils';
 
 import type { SpaceInfo } from '../../../../components/data-access';
-import type { ComboLabelPoint, ErrorData } from '../g6-types';
-import type { DetailType, TooltipType } from '../g6-types';
-import type { IEdge, IEntity, IncidentDetailData, IncidentResults, ITopoNode } from '../types';
+import type { G6TooltipInstance } from '../types/composable';
+import type { ComboLabelPoint, DetailType, ErrorData, TooltipType } from '../types/g6';
+import type { IEdge, IEntity, IncidentDetailData, IncidentResults, ITopoNode } from '../types/topo';
+import type { Graph } from '@antv/g6';
+
+// ============================================================================
+// 组件实例薄接口（仅覆盖本模块实际调用的方法 / 属性）
+// ============================================================================
+
+/** 资源图组件暴露面：关闭资源图自身 tooltip */
+export type ResourceGraphExpose = {
+  hideToolTips?: () => void;
+};
+
+/** Vue Tooltip 组件暴露面：交互侧调用 hide，G6 getContent 读取 $el */
+export type TooltipCompExpose = {
+  $el?: HTMLElement;
+  hide?: () => void;
+};
+
 // ============================================================================
 // Props 类型
 // ============================================================================
 
 export interface TopoStateProps {
   isCollapsed: boolean;
-  selectNode: any[];
+  /** 左侧菜单选中的节点 ID 列表（Vue Array prop 可能为 number/string） */
+  selectNode: ReadonlyArray<number | string>;
 }
 
 // ============================================================================
@@ -98,9 +114,11 @@ export function useTopoState(props: TopoStateProps) {
   const dataAccessSpaceList = computed<SpaceInfo[]>(() => {
     const bizId = bkzIds?.value?.[0];
     if (!bizId) return [];
-    const bizName = incidentDetailData.value?.current_snapshot?.bk_biz_ids?.find(
-      ({ bk_biz_id }) => String(bk_biz_id) === String(bizId)
-    )?.bk_biz_name;
+    // current_snapshot 在 IncidentDetailData 中为宽松 Record，此处收窄到 bk_biz_ids 结构
+    const snap = incidentDetailData.value?.current_snapshot as
+      | undefined
+      | { bk_biz_ids?: Array<{ bk_biz_id: number; bk_biz_name?: string }> };
+    const bizName = snap?.bk_biz_ids?.find(({ bk_biz_id }) => String(bk_biz_id) === String(bizId))?.bk_biz_name;
     return [{ bk_biz_id: Number(bizId), space_name: bizName || String(bizId), space_id: Number(bizId) }];
   });
 
@@ -137,9 +155,9 @@ export function useTopoState(props: TopoStateProps) {
   /** 拓扑工具栏组件实例引用 */
   const topoTools = deepRef(null);
   /** Tooltip 弹层组件实例引用，用于手动控制显隐 */
-  const tooltipCompRef = deepRef<any>();
+  const tooltipCompRef = deepRef<TooltipCompExpose>();
   /** 右侧资源图组件实例引用，用于调用资源图方法 */
-  const resourceGraphRef = deepRef<any>();
+  const resourceGraphRef = deepRef<ResourceGraphExpose>();
 
   // ---------------------------------------------------------------------------
   // G6 实例 Ref — shallowRef（在 use-topo-graph 中赋值）
@@ -148,7 +166,7 @@ export function useTopoState(props: TopoStateProps) {
   /** G6 Graph 实例，在 use-topo-graph 的 initGraph 中赋值，其他 composable 通过 .value 访问 */
   const graphInstanceRef = shallowRef<Graph>() as ShallowRef<Graph | undefined>;
   /** G6 Tooltip 插件实例，在 use-topo-graph 的 registerCustomTooltip 中赋值 */
-  const g6TooltipRef = shallowRef<any>() as ShallowRef<any | undefined>;
+  const g6TooltipRef = shallowRef<G6TooltipInstance>() as ShallowRef<G6TooltipInstance | undefined>;
 
   // ---------------------------------------------------------------------------
   // 核心状态
@@ -157,7 +175,7 @@ export function useTopoState(props: TopoStateProps) {
   /** 缓存 resize render 后执行的回调，主要用于点击播放前收起右侧面板时延迟执行 */
   const resizeCacheCallback = deepRef<(() => void) | null>(null);
   /** 边/节点详情信息，传入 Tooltip 组件展示 */
-  const detailInfo = deepRef<Record<string, any>>({});
+  const detailInfo = deepRef<ITopoNode | Record<string, unknown>>({});
   /** 标记当前是否在 resize 过程中，防止 resize 与 render 冲突 */
   const cacheResize = deepRef<boolean>(false);
   /** 自动刷新间隔时间（毫秒），默认 5 分钟，由工具栏的刷新时间设置组件修改 */
@@ -190,7 +208,7 @@ export function useTopoState(props: TopoStateProps) {
   const showResourceGraph = deepRef<boolean>(false);
 
   // ---------------------------------------------------------------------------
-  // Tooltip 状态（Step 9 迁移到 use-topo-tooltip）
+  // Tooltip 状态（逻辑在 use-topo-tooltip，状态仍在此声明）
   // ---------------------------------------------------------------------------
 
   /** 当前 hover/click 的节点模型数据，单个节点或聚合节点数组 */
@@ -213,10 +231,10 @@ export function useTopoState(props: TopoStateProps) {
   const showViewResource = deepRef<boolean>(true);
 
   // ---------------------------------------------------------------------------
-  // 时间轴状态（Step 8 迁移到 use-topo-timeline）
+  // 时间轴状态（逻辑在 use-topo-timeline，状态仍在此声明）
   // ---------------------------------------------------------------------------
 
-  /** 当前停留帧索引，0 = 最新帧，越大越早；slider 和播放动画控制此值 */
+  /** 当前停留帧索引，0 = 最早帧，越大越新（末帧为最新）；由 slider 和播放动画控制 */
   const timelinePosition = deepRef<number>(0);
   /** 是否正在播放时间轴动画（自动逐帧推进） */
   const isPlay = deepRef<boolean>(false);
@@ -239,6 +257,13 @@ export function useTopoState(props: TopoStateProps) {
   const resourceEdgeId = deepRef<string>('');
 
   // ---------------------------------------------------------------------------
+  // Props 派生（保持响应式，供 interaction / watch 使用）
+  // ---------------------------------------------------------------------------
+
+  /** 左侧菜单选中的节点 ID 列表 */
+  const selectNode = toRef(props, 'selectNode');
+
+  // ---------------------------------------------------------------------------
   // Props 派生 computed
   // ---------------------------------------------------------------------------
 
@@ -257,6 +282,8 @@ export function useTopoState(props: TopoStateProps) {
     incidentDetailData,
     incidentId,
     updateAlarmDetailData,
+    // props
+    selectNode,
     // DOM refs — 模板引用
     wrapRef,
     topoGraphRef,
@@ -281,7 +308,7 @@ export function useTopoState(props: TopoStateProps) {
     showLegend,
     showServiceOverview,
     showResourceGraph,
-    // tooltip — Tooltip 状态（→ Step 9 use-topo-tooltip）
+    // tooltip — Tooltip 状态
     tooltipsModel,
     tooltipsEdge,
     edgeDetail,
@@ -291,7 +318,7 @@ export function useTopoState(props: TopoStateProps) {
     tooltipsType,
     detailType,
     showViewResource,
-    // timeline — 时间轴状态（→ Step 8 use-topo-timeline）
+    // timeline — 时间轴状态
     timelinePosition,
     isPlay,
     // feedback — 反馈 / 交互状态

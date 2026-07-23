@@ -34,23 +34,15 @@
  * - handleResize: 窗口 resize 时重新布局和调整
  * - cleanupGraph: 组件卸载时清理 G6 相关资源（动画 + resize 监听）
  *
- * ## 关键变更 (Step 10)
- * - `let graph: Graph` → `shallowRef<Graph>()` (graphInstanceRef)，在 use-topo-state 中声明
- * - `let g6Tooltip: any` → `shallowRef<any>()` (g6TooltipRef)，在 use-topo-state 中声明
- * - 所有 composable 的 `graphAccess` / `tooltipAccess` getter 改为读取 shallowRef.value
- * - tooltipAccess 不再需要 `{ setTooltip, getTooltip }` 桥接模式
- *
  * ## 依赖注入
- * - state: 从 useTopoState 接收所有响应式状态（含 graphInstanceRef / g6TooltipRef）
- * - data: 从 useTopoData 接收数据和函数
- * - interaction: 从 useTopoInteraction 接收交互函数
- * - timeline: 从 useTopoTimeline 接收播放函数
- * - tooltip: 从 useTopoTooltip 接收 tooltip 函数
+ * - state: 从 useTopoState 接收响应式状态（含 graphInstanceRef / g6TooltipRef）
+ * - data: 从 useTopoData 接收数据和函数（含 topoRawDataCache）
+ * - interaction / timeline / tooltip: 各 composable 返回的能力子集
  */
 
 import { type Ref, type ShallowRef, nextTick } from 'vue';
 
-import { type INode, Arrow, Graph } from '@antv/g6';
+import { type ICombo, type IG6GraphEvent, type INode, type Item, Arrow, Graph } from '@antv/g6';
 import { addListener, removeListener } from '@blueking/fork-resize-detector';
 import { debounce } from 'throttle-debounce';
 
@@ -60,10 +52,11 @@ import { clearEdgeIntervals } from '../graph/topo-edge';
 import { createTruncateByTextWidth } from '../graph/topo-node';
 import { canJumpByType, handleToLink } from '../utils';
 
-import type { ComboLabelPoint } from '../g6-types';
-import type { CanvasByPointResult } from '../g6-types';
-import type { IncidentDetailData, ITopoData } from '../types';
-import type { TopoEmitFn } from './use-topo-interaction';
+import type { G6TooltipInstance } from '../types/composable';
+import type { CanvasByPointResult, ComboLabelPoint, NavSelectNodeItem, TopoRawDataCache } from '../types/g6';
+import type { IncidentDetailData, ITopoCombo, ITopoData, ITopoNode } from '../types/topo';
+import type { TooltipCompExpose } from './use-topo-state';
+import type { GraphData } from '@antv/g6';
 
 // ============================================================================
 // 类型定义
@@ -73,10 +66,12 @@ import type { TopoEmitFn } from './use-topo-interaction';
 export interface TopoGraphData {
   /** 拓扑完整原始数据（格式化后的） */
   topoRawData: Ref<ITopoData | null>;
+  /** 拓扑原始数据缓存（含 diff / complete） */
+  topoRawDataCache: Ref<TopoRawDataCache>;
   /** 如果指定节点不在视口内，将视口移动到该节点中心 */
   moveToCenterIfNeeded: (graph: Graph, itemId: string, containerWidth: number, containerHeight: number) => void;
   /** ELK 布局计算 */
-  resolveLayout: (data: any) => Promise<any>;
+  resolveLayout: (data: LayoutInput) => Promise<ResolveLayoutResult>;
 }
 
 /** useTopoGraph 需要从 useTopoInteraction 接收的交互函数子集 */
@@ -84,22 +79,22 @@ export interface TopoGraphInteraction {
   /** G6 默认缩放级别下限 */
   MIN_ZOOM: number;
   /** 导航选中节点计算属性 */
-  navSelectNode: Ref<any[]>;
+  navSelectNode: Ref<NavSelectNodeItem[]>;
   /** 清除高亮状态 */
   clearAllStats: () => void;
   /** 清除边状态 */
-  clearEdgeState: (item: any, highlight?: boolean) => void;
-  /** 获取相对位置 */
-  getCanvasByPoint: (combo: any) => CanvasByPointResult;
+  clearEdgeState: (item: Item, highlight?: boolean) => void;
+  /** 获取 combo 画布坐标包围盒边界 */
+  getCanvasByPoint: (combo: ICombo) => CanvasByPointResult;
   /** 反馈根因 */
-  handleFeedBack: (model: any) => void;
+  handleFeedBack: (model: ITopoNode) => void;
   /** 画布缩放 */
-  handleZoomChange: (value: any) => void;
+  handleZoomChange: (value: number) => void;
   /** 拖拽时设置 combo label 的位置 */
   moveComboLabelPosition: (point: { x?: number; y?: number }) => void;
   /** 切换 node 清除高亮边信息 */
   setHighlightEdge: (highlight?: boolean, nodeId?: string) => void;
-  /** 线置于顶层 */
+  /** 将所有边置于顶层 */
   toFrontAnomalyEdge: () => void;
 }
 
@@ -110,7 +105,7 @@ export interface TopoGraphState {
   /** 标记当前是否在 resize 过程中 */
   cacheResize: Ref<boolean>;
   /** G6 Tooltip 插件实例 shallowRef（在 registerCustomTooltip 中赋值） */
-  g6TooltipRef: ShallowRef<any | undefined>;
+  g6TooltipRef: ShallowRef<G6TooltipInstance | undefined>;
   /** G6 Graph 实例 shallowRef（在此 composable 的 initGraph 中赋值） */
   graphInstanceRef: ShallowRef<Graph | undefined>;
   /** G6 画布 DOM 容器 ref */
@@ -132,9 +127,7 @@ export interface TopoGraphState {
   /** 时间轴停留帧索引 */
   timelinePosition: Ref<number>;
   /** Tooltip Vue 组件实例引用 */
-  tooltipCompRef: Ref<any>;
-  /** 拓扑原始数据缓存 */
-  topoRawDataCache: Ref<any>;
+  tooltipCompRef: Ref<TooltipCompExpose>;
   /** 缩放级别数值 */
   zoomValue: Ref<number>;
 }
@@ -150,15 +143,15 @@ export interface TopoGraphTimeline {
 /** useTopoGraph 需要从 useTopoTooltip 接收的 tooltip 函数子集 */
 export interface TopoGraphTooltip {
   /** Combo 鼠标进入 — 显示 label tooltip + 反馈根因文本 */
-  handleComboMouseEnter: (e: any) => void;
+  handleComboMouseEnter: (e: IG6GraphEvent) => void;
   /** Combo 鼠标离开 — 隐藏 label tooltip + 反馈根因文本 */
-  handleComboMouseLeave: (e: any) => void;
+  handleComboMouseLeave: (e: IG6GraphEvent) => void;
   /** 节点鼠标进入 — 显示详情 tooltip */
-  handleNodeMouseEnter: (e: any) => void;
+  handleNodeMouseEnter: (e: IG6GraphEvent) => void;
   /** 节点鼠标离开 — 隐藏详情 tooltip */
-  handleNodeMouseLeave: (e: any) => void;
+  handleNodeMouseLeave: (e: IG6GraphEvent) => void;
   /** G6 tooltipchange 事件处理 */
-  handleTooltipChange: (e: any) => void;
+  handleTooltipChange: (e: IG6GraphEvent) => void;
   /** 隐藏 combo-label-tooltip */
   hideComboLabelTooltip: () => void;
   /** 隐藏 G6 Tooltip 插件 */
@@ -171,11 +164,24 @@ export interface TopoGraphTooltip {
   registerCustomTooltip: () => void;
 }
 
+export type UseTopoGraphReturn = ReturnType<typeof useTopoGraph>;
+
+/**
+ * 布局计算入参（与 use-topo-data 中 LayoutInput 等价；该类型未导出故本地复刻）
+ * 完整拓扑数据 + 可选 sub_combos
+ */
+type LayoutInput = ITopoData & { sub_combos?: ITopoCombo[] };
+
 // ============================================================================
 // Composable
 // ============================================================================
 
-export type UseTopoGraphReturn = ReturnType<typeof useTopoGraph>;
+/** resolveLayout 返回结构（与 use-topo-data 中 ResolveLayoutResult 等价） */
+type ResolveLayoutResult = {
+  data: LayoutInput;
+  /** ELK 原始布局结果 */
+  layouted: unknown;
+};
 
 export function useTopoGraph(
   state: TopoGraphState,
@@ -196,12 +202,13 @@ export function useTopoGraph(
   // ---------------------------------------------------------------------------
 
   /** 渲染拓扑数据到 Graph */
-  const renderGraph = (renderData = state.topoRawDataCache.value.complete, renderComplete = false) => {
+  const renderGraph = (renderData = topoData.topoRawDataCache.value.complete, renderComplete = false) => {
     const graph = getGraph();
     if (!graph) return;
     clearEdgeIntervals();
     topoData.resolveLayout(renderData).then(resp => {
-      graph.data(resp.data);
+      // LayoutInput 与 G6 GraphData 字段对齐，断言后写入画布
+      graph.data(resp.data as GraphData);
       graph.render();
       if (state.resourceNodeId.value) {
         const node = graph.findById(state.resourceNodeId.value);
@@ -212,7 +219,8 @@ export function useTopoGraph(
       // 获取用户拖动设置后的zoom缩放级别
       const zoom = localStorage.getItem('failure-topo-zoom');
       if (zoom) {
-        interaction.handleZoomChange(zoom);
+        // localStorage 取出为 string，缩放接口要求 number
+        interaction.handleZoomChange(Number(zoom));
         state.zoomValue.value = Number(zoom);
       }
       topoData.moveToCenterIfNeeded(
@@ -231,7 +239,7 @@ export function useTopoGraph(
           deleteNode.hide();
         }
       });
-      /** 布局渲染完将红线置顶 */
+      /** 布局渲染完将边置于顶层 */
       setTimeout(interaction.toFrontAnomalyEdge, 500);
     });
   };
@@ -255,13 +263,15 @@ export function useTopoGraph(
     state.tooltipCompRef.value?.hide?.();
     state.rootComboMovePoint.value = { x: null, y: null };
     tooltip.hideG6Tooltip();
-    const combosList = graph.getCombos().map(combo => combo.getModel());
+    // getModel() 返回 G6 ModelConfig，业务层按 ITopoCombo 使用
+    const combosList = graph.getCombos().map(combo => combo.getModel()) as ITopoCombo[];
     ElkjsUtils.setRootComboStyle(combosList, width, !(graphWidth - width > 450));
     // biome-ignore lint/complexity/noForEach: <explanation>
     graph.getCombos().forEach(combo => {
       if (!combo.getModel()?.parentId) {
         const com = combosList.find(c => c.id === combo.getID());
-        graph.updateItem(combo, com);
+        // updateItem 官方 cfg 类型偏窄，业务 combo 模型此处宽松传入
+        graph.updateItem(combo, com as any);
       }
     });
     graph.changeSize(width, height - 40);
@@ -277,12 +287,13 @@ export function useTopoGraph(
     graph.translate(graphWidth - width > 450 ? -10 : 0, 0);
     const zoom = localStorage.getItem('failure-topo-zoom');
     if (zoom) {
-      interaction.handleZoomChange(zoom);
+      // localStorage 取出为 string，缩放接口要求 number
+      interaction.handleZoomChange(Number(zoom));
       state.zoomValue.value = Number(zoom);
     }
-    state.timelinePosition.value = state.topoRawDataCache.value.diff.length - 1;
+    state.timelinePosition.value = topoData.topoRawDataCache.value.diff.length - 1;
     /** resize 后同步渲染最后一帧的节点状态 */
-    timeline.handleTimelineChange(state.topoRawDataCache.value.diff.length - 1, true, true);
+    timeline.handleTimelineChange(topoData.topoRawDataCache.value.diff.length - 1, true, true);
     /** 打开时会触发导致动画消失 */
     if (state.resourceNodeId.value) {
       const isNavSelectNode = interaction.navSelectNode.value.some(node => node.id === state.resourceNodeId.value);
@@ -510,7 +521,8 @@ export function useTopoGraph(
       }
       const currentZoom = graph.getZoom();
       // if (action === 'translate') {
-      const comboModel = (graph.getCombos() as any)[0].getModel() as { height: number; width: number };
+      const firstCombo = graph.getCombos()[0] as ICombo;
+      const comboModel = firstCombo.getModel() as { height: number; width: number };
       const labelPoint = {
         x: -(comboModel.width / 2 + 10) * currentZoom,
         y: -(comboModel.height / 2 + 30) * currentZoom,
@@ -587,7 +599,8 @@ export function useTopoGraph(
         return;
       }
       if (target.get('className') === 'sub-combo-label-feedback') {
-        interaction.handleFeedBack(model);
+        // getModel() 返回 G6 配置，反馈根因按业务节点模型使用
+        interaction.handleFeedBack(model as ITopoNode);
       }
     });
     /** 触发下一帧播放 - 动画完成后继续处理队列 */

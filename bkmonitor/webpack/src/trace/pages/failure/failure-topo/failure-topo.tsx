@@ -23,7 +23,7 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-import { defineComponent, onMounted, onUnmounted, toRef, watch } from 'vue';
+import { defineComponent, onMounted, onUnmounted, watch } from 'vue';
 
 import { Loading, Popover, Slider } from 'bkui-vue';
 
@@ -33,7 +33,7 @@ import ResourceGraph from '../resource-graph/resource-graph';
 import { useTopoData } from './composables/use-topo-data';
 import { useTopoGraph } from './composables/use-topo-graph';
 import { useTopoInteraction } from './composables/use-topo-interaction';
-import { useTopoState } from './composables/use-topo-state';
+import { type TopoStateProps, useTopoState } from './composables/use-topo-state';
 import { useTopoTimeline } from './composables/use-topo-timeline';
 import { useTopoTooltip } from './composables/use-topo-tooltip';
 import FailureTopoDetail from './detail/failure-topo-detail';
@@ -41,6 +41,9 @@ import FeedbackCauseDialog from './feedback-cause-dialog';
 import LegendPopoverContent from './legend/legend-popover-content';
 import TopoTools from './toolbar/topo-tools';
 import FailureTopoTooltips from './tooltip/failure-topo-tooltips';
+
+import type { GraphAccess, RenderGraphAccess, TooltipAccess } from './types/composable';
+import type { ITopoNode } from './types/topo';
 
 import './failure-topo.scss';
 
@@ -60,325 +63,69 @@ export default defineComponent({
   },
   emits: ['toDetail', 'playing', 'toDetailTab', 'changeSelectNode', 'refresh', 'closeCollapse'],
   setup(props, { emit }) {
-    const {
-      t,
-      bkzIds,
-      incidentDetailData,
-      incidentId,
-      updateAlarmDetailData,
-      wrapRef,
-      topoGraphRef,
-      graphRef,
-      topoTools,
-      tooltipCompRef,
-      resourceGraphRef,
-      graphInstanceRef,
-      g6TooltipRef,
-      resizeCacheCallback,
-      detailInfo,
-      cacheResize,
-      refreshTime,
-      rootComboMovePoint,
-      loading,
-      errorData,
-      isRenderComplete,
-      zoomValue,
-      showLegend,
-      showServiceOverview,
-      showResourceGraph,
-      tooltipsModel,
-      tooltipsEdge,
-      edgeDetail,
-      isClickEdgeItem,
-      nodeDetail,
-      curLinkedEdges,
-      tooltipsType,
-      detailType,
-      showViewResource,
-      timelinePosition,
-      isPlay,
-      feedbackCauseShow,
-      feedbackModel,
-      nodeEntityId,
-      nodeEntityName,
-      resourceNodeId,
-      resourceEdgeId,
-      dataAccessSpaceList,
-      topoStatus,
-      getTopoWidth,
-    } = useTopoState(props);
+    // 整包状态，Vue Array prop 推断为 unknown[]，与 TopoStateProps.selectNode 做兼容断言
+    const state = useTopoState(props as TopoStateProps);
 
-    // 数据 composable
-    const {
-      topoRawDataCache,
-      topoRawData,
-      autoAggregate,
-      aggregateConfig,
-      aggregateCall,
-      aggregateVersion,
-      resolveLayout,
-      getGraphData,
-      registerInitGraphCallback,
-      cleanupData,
-      handleChangeRefleshTime,
-      clearRefreshTimeout,
-      moveToCenterIfNeeded,
-      filterEdges,
-      findEdges,
-    } = useTopoData(
-      {
-        incidentId,
-        wrapRef,
-        loading,
-        errorData,
-        refreshTime,
-        timelinePosition,
-        resourceNodeId,
-        nodeEntityId,
-        nodeEntityName,
-        isPlay,
-      },
-      { getGraph: () => graphInstanceRef.value }
-    );
+    /** Graph / Tooltip 访问器（统一读写 shallowRef） */
+    const graphAccess: GraphAccess = { getGraph: () => state.graphInstanceRef.value };
+    const tooltipAccess: TooltipAccess = { getTooltip: () => state.g6TooltipRef.value };
 
-    // renderGraph 前向引用（useTopoGraph 在 interaction 之后调用，但 interaction 需要 renderGraphCallback）
-    let renderGraphFn: (data?: any, renderComplete?: boolean) => void = () => {};
+    // 数据层
+    const data = useTopoData(state, graphAccess);
 
-    // 交互 composable
-    const {
-      MIN_ZOOM,
-      navSelectNode,
-      getCanvasByPoint,
-      moveComboLabelPosition,
-      toFrontAnomalyEdge,
-      clearEdgeState,
-      clearAllStats,
-      handleNodeInfoTooltip,
-      setHighlightEdge,
-      handleHighlightEdge,
-      handleViewServiceFromTopo,
-      handleViewServiceFromResource,
-      handleViewServiceFromTop,
-      handleViewResource,
-      handleFeedBack,
-      handleFeedBackChange,
-      handleUpdateAggregateConfig,
-      handleResetZoom,
-      handleZoomChange,
-      handleUpdateZoom,
-      handleCollapseChange,
-      handleShowLegend,
-      handleHideToolTips,
-      handleHideTooltips,
-      handleToDetailSlider,
-      handleRootToSpan,
-      goToTracePage,
-      handleToDetailTab,
-    } = useTopoInteraction(
-      {
-        selectNode: toRef(props, 'selectNode'),
-        t,
-        bkzIds,
-        incidentDetailData,
-        updateAlarmDetailData,
-        tooltipCompRef,
-        resourceGraphRef,
-        graphRef,
-        zoomValue,
-        showLegend,
-        showServiceOverview,
-        showResourceGraph,
-        tooltipsModel,
-        tooltipsEdge,
-        edgeDetail,
-        isClickEdgeItem,
-        nodeDetail,
-        curLinkedEdges,
-        tooltipsType,
-        detailType,
-        showViewResource,
-        feedbackCauseShow,
-        feedbackModel,
-        nodeEntityId,
-        nodeEntityName,
-        resourceNodeId,
-        resourceEdgeId,
-        detailInfo,
-        resizeCacheCallback,
-        timelinePosition,
-        isPlay,
-        rootComboMovePoint,
-      },
-      {
-        topoRawDataCache,
-        topoRawData,
-        autoAggregate,
-        aggregateConfig,
-        aggregateCall,
-        aggregateVersion,
-        getGraphData,
-        filterEdges,
-        findEdges,
-        handleChangeRefleshTime,
-        moveToCenterIfNeeded,
-      },
-      { getGraph: () => graphInstanceRef.value },
-      { getTooltip: () => g6TooltipRef.value },
-      { renderGraphCallback: (...args: any[]) => renderGraphFn(...args) },
-      emit
-    );
+    // renderGraph 前向引用（interaction 早于 graph 创建，但依赖 renderGraphCallback）
+    let renderGraphFn: RenderGraphAccess['renderGraphCallback'] = () => {};
+    const renderGraphAccess: RenderGraphAccess = {
+      renderGraphCallback: (data, renderComplete) => renderGraphFn(data, renderComplete),
+    };
 
-    // 时间轴播放 composable
-    const { handleResetPlay, handlePlay, handleTimelineChange, onAnimationStateChange, cleanupTimeline } =
-      useTopoTimeline(
-        {
-          isPlay,
-          showResourceGraph,
-          showServiceOverview,
-          timelinePosition,
-          resourceNodeId,
-          refreshTime,
-          resizeCacheCallback,
-          topoRawDataCache,
-        },
-        {
-          clearRefreshTimeout,
-          handleChangeRefleshTime,
-          findEdges,
-        },
-        { getGraph: () => graphInstanceRef.value },
-        emit
-      );
-
-    const handleToDetail = (node: any) => emit('toDetail', node);
-
-    const refresh = () => emit('refresh');
-
-    // Tooltip composable
-    const {
-      registerCustomTooltip,
-      initComboLabelTooltip,
-      initNodeInfoTooltip,
-      handleComboMouseEnter,
-      handleComboMouseLeave,
-      hideComboLabelTooltip,
-      handleNodeMouseEnter,
-      handleNodeMouseLeave,
-      handleTooltipChange,
-      hideG6Tooltip,
-    } = useTopoTooltip(
-      {
-        tooltipsModel,
-        tooltipsEdge,
-        edgeDetail,
-        isClickEdgeItem,
-        tooltipsType,
-        tooltipCompRef,
-        showResourceGraph,
-        resourceGraphRef,
-      },
-      { topoRawDataCache },
-      { handleViewServiceFromTopo, handleNodeInfoTooltip },
-      {
-        setTooltip: (t: any) => {
-          g6TooltipRef.value = t;
-        },
-        getTooltip: () => g6TooltipRef.value,
-      },
-      { getGraph: () => graphInstanceRef.value }
-    );
-
-    // Graph 初始化 + 操作 composable
-    const { initGraph, renderGraph, cleanupGraph } = useTopoGraph(
-      {
-        graphInstanceRef,
-        g6TooltipRef,
-        graphRef,
-        resizeCacheCallback,
-        cacheResize,
-        isPlay,
-        isRenderComplete,
-        zoomValue,
-        resourceNodeId,
-        resourceEdgeId,
-        rootComboMovePoint,
-        timelinePosition,
-        tooltipCompRef,
-        topoRawDataCache,
-        bkzIds,
-        incidentDetailData,
-      },
-      {
-        topoRawData,
-        resolveLayout,
-        moveToCenterIfNeeded,
-      },
-      {
-        MIN_ZOOM,
-        navSelectNode,
-        getCanvasByPoint,
-        moveComboLabelPosition,
-        toFrontAnomalyEdge,
-        clearEdgeState,
-        clearAllStats,
-        setHighlightEdge,
-        handleZoomChange,
-        handleFeedBack,
-      },
-      {
-        handleTimelineChange,
-        onAnimationStateChange,
-      },
-      {
-        registerCustomTooltip,
-        initComboLabelTooltip,
-        initNodeInfoTooltip,
-        handleComboMouseEnter,
-        handleComboMouseLeave,
-        hideComboLabelTooltip,
-        handleNodeMouseEnter,
-        handleNodeMouseLeave,
-        handleTooltipChange,
-        hideG6Tooltip,
-      }
-    );
+    // 交互 / 时间轴 / Tooltip / Graph — 整包传入，由各 composable 按需取字段
+    const interaction = useTopoInteraction(state, data, graphAccess, tooltipAccess, renderGraphAccess, emit);
+    const timeline = useTopoTimeline(state, data, graphAccess, emit);
+    const tooltip = useTopoTooltip(state, data, interaction, state.g6TooltipRef, graphAccess);
+    const { initGraph, renderGraph, cleanupGraph } = useTopoGraph(state, data, interaction, timeline, tooltip);
 
     // 赋值前向引用（renderGraph 在 useTopoGraph 返回后才可用）
     renderGraphFn = renderGraph;
 
+    /** 纯 emit 透传（留在主文件） */
+    const handleToDetail = (node: ITopoNode) => emit('toDetail', node);
+
+    const refresh = () => emit('refresh');
+
     onMounted(() => {
-      if (topoStatus.value === 'normal') {
-        registerInitGraphCallback(initGraph);
-        getGraphData();
+      if (state.topoStatus.value === 'normal') {
+        data.registerInitGraphCallback(initGraph);
+        data.getGraphData();
       }
     });
 
     watch(
-      () => topoStatus.value,
+      () => state.topoStatus.value,
       val => {
         if (val === 'normal') {
-          registerInitGraphCallback(initGraph);
-          getGraphData();
+          data.registerInitGraphCallback(initGraph);
+          data.getGraphData();
         }
       }
     );
 
     onUnmounted(() => {
       cleanupGraph();
-      clearRefreshTimeout();
-      cleanupTimeline();
-      cleanupData();
+      data.clearRefreshTimeout();
+      timeline.cleanupTimeline();
+      data.cleanupData();
     });
 
     /** 右侧资源拓扑、节点/边概览侧滑同时打开时，关闭左侧侧滑 */
     watch(
-      () => [showServiceOverview.value, showResourceGraph.value],
+      () => [state.showServiceOverview.value, state.showResourceGraph.value],
       ([showService, showResource]) => {
         if (showService && showResource) {
           emit('closeCollapse', true);
         }
         if (!showService) {
-          resourceEdgeId.value = '';
+          state.resourceEdgeId.value = '';
         }
       }
     );
@@ -388,28 +135,28 @@ export default defineComponent({
       () => props.selectNode,
       val => {
         if (val.length) {
-          const graph = graphInstanceRef.value;
+          const graph = state.graphInstanceRef.value;
           if (!graph) return;
           /** 清除之前节点状态 */
           // biome-ignore lint/complexity/noForEach: <explanation>
           graph.findAllByState('node', 'running').forEach?.(node => {
             graph.setItemState(node, 'running', false);
           });
-          navSelectNode.value?.map?.((item, index) => {
+          interaction.navSelectNode.value?.map?.((item, index) => {
             /** 多个节点只设置第一个节点为资源图节点 */
             if (index === 0) {
-              if (item.entityId !== nodeEntityId.value) {
-                showResourceGraph.value = false;
-                showServiceOverview.value = false;
-                resourceNodeId.value = item.id;
-                nodeEntityId.value = item.entityId;
-                nodeEntityName.value = item.entity_name;
+              if (item.entityId !== state.nodeEntityId.value) {
+                state.showResourceGraph.value = false;
+                state.showServiceOverview.value = false;
+                state.resourceNodeId.value = item.id;
+                state.nodeEntityId.value = item.entityId;
+                state.nodeEntityName.value = item.entity_name;
               }
-              moveToCenterIfNeeded(
+              data.moveToCenterIfNeeded(
                 graph,
-                resourceNodeId.value,
-                graphRef.value!.clientWidth,
-                graphRef.value!.clientHeight
+                state.resourceNodeId.value,
+                state.graphRef.value!.clientWidth,
+                state.graphRef.value!.clientHeight
               );
             }
             graph.setItemState(graph.findById(item.id), 'running', true);
@@ -422,76 +169,90 @@ export default defineComponent({
     watch(
       () => props.isCollapsed,
       val => {
-        if (!val && showServiceOverview.value && showResourceGraph.value) {
-          showServiceOverview.value = false;
+        if (!val && state.showServiceOverview.value && state.showResourceGraph.value) {
+          state.showServiceOverview.value = false;
+        }
+      }
+    );
+
+    /** playing 期间关闭 tooltip（包含聚合节点 Popover 与 G6 tooltip） */
+    watch(
+      () => state.isPlay.value,
+      val => {
+        if (val) {
+          interaction.handleHideTooltips();
         }
       }
     );
 
     return {
-      isPlay,
-      nodeEntityId,
-      topoTools,
-      showResourceGraph,
-      showServiceOverview,
-      timelinePosition,
-      topoGraphRef,
-      tooltipsEdge,
-      edgeDetail,
-      isClickEdgeItem,
-      graphRef,
-      loading,
-      zoomValue,
-      resourceGraphRef,
-      tooltipCompRef,
-      wrapRef,
-      showLegend,
-      tooltipsModel,
-      nodeDetail,
-      feedbackCauseShow,
-      feedbackModel,
-      resourceNodeId,
-      topoRawDataCache,
-      tooltipsType,
-      detailType,
-      errorData,
-      nodeEntityName,
-      detailInfo,
-      getTopoWidth,
-      curLinkedEdges,
-      refreshTime,
-      showViewResource,
-      topoStatus,
-      bkzIds,
-      dataAccessSpaceList,
-      incidentDetailData,
+      // state（模板所需）
+      isPlay: state.isPlay,
+      nodeEntityId: state.nodeEntityId,
+      topoTools: state.topoTools,
+      showResourceGraph: state.showResourceGraph,
+      showServiceOverview: state.showServiceOverview,
+      timelinePosition: state.timelinePosition,
+      topoGraphRef: state.topoGraphRef,
+      tooltipsEdge: state.tooltipsEdge,
+      edgeDetail: state.edgeDetail,
+      isClickEdgeItem: state.isClickEdgeItem,
+      graphRef: state.graphRef,
+      loading: state.loading,
+      zoomValue: state.zoomValue,
+      resourceGraphRef: state.resourceGraphRef,
+      tooltipCompRef: state.tooltipCompRef,
+      wrapRef: state.wrapRef,
+      showLegend: state.showLegend,
+      tooltipsModel: state.tooltipsModel,
+      nodeDetail: state.nodeDetail,
+      feedbackCauseShow: state.feedbackCauseShow,
+      feedbackModel: state.feedbackModel,
+      resourceNodeId: state.resourceNodeId,
+      tooltipsType: state.tooltipsType,
+      detailType: state.detailType,
+      errorData: state.errorData,
+      nodeEntityName: state.nodeEntityName,
+      detailInfo: state.detailInfo,
+      getTopoWidth: state.getTopoWidth,
+      curLinkedEdges: state.curLinkedEdges,
+      refreshTime: state.refreshTime,
+      showViewResource: state.showViewResource,
+      topoStatus: state.topoStatus,
+      bkzIds: state.bkzIds,
+      dataAccessSpaceList: state.dataAccessSpaceList,
+      incidentDetailData: state.incidentDetailData,
+      t: state.t,
+      // data
+      topoRawDataCache: data.topoRawDataCache,
+      handleChangeRefleshTime: data.handleChangeRefleshTime,
+      // interaction
+      handleHideTooltips: interaction.handleHideTooltips,
+      handleRootToSpan: interaction.handleRootToSpan,
+      handleFeedBackChange: interaction.handleFeedBackChange,
+      handleFeedBack: interaction.handleFeedBack,
+      handleShowLegend: interaction.handleShowLegend,
+      handleViewResource: interaction.handleViewResource,
+      handleViewServiceFromResource: interaction.handleViewServiceFromResource,
+      handleViewServiceFromTop: interaction.handleViewServiceFromTop,
+      handleViewServiceFromTopo: interaction.handleViewServiceFromTopo,
+      handleUpdateZoom: interaction.handleUpdateZoom,
+      handleZoomChange: interaction.handleZoomChange,
+      handleResetZoom: interaction.handleResetZoom,
+      handleUpdateAggregateConfig: interaction.handleUpdateAggregateConfig,
+      handleToDetailSlider: interaction.handleToDetailSlider,
+      setHighlightEdge: interaction.setHighlightEdge,
+      handleToDetailTab: interaction.handleToDetailTab,
+      goToTracePage: interaction.goToTracePage,
+      handleCollapseChange: interaction.handleCollapseChange,
+      handleHighlightEdge: interaction.handleHighlightEdge,
+      // timeline
+      handleTimelineChange: timeline.handleTimelineChange,
+      handlePlay: timeline.handlePlay,
+      handleResetPlay: timeline.handleResetPlay,
+      // 主文件纯 emit
       handleToDetail,
-      handleHideToolTips,
-      handleRootToSpan,
-      handleFeedBackChange,
-      handleFeedBack,
-      handleShowLegend,
-      handleViewResource,
-      handleViewServiceFromResource,
-      handleViewServiceFromTop,
-      handleViewServiceFromTopo,
-      handleUpdateZoom,
-      handleZoomChange,
-      handleResetZoom,
-      handleUpdateAggregateConfig,
-      handleChangeRefleshTime,
-      handleTimelineChange,
-      handlePlay,
-      handleResetPlay,
-      handleToDetailSlider,
-      setHighlightEdge,
-      handleToDetailTab,
       refresh,
-      goToTracePage,
-      t,
-      handleCollapseChange,
-      handleHighlightEdge,
-      handleHideTooltips,
     };
   },
   render() {
@@ -632,7 +393,7 @@ export default defineComponent({
                     modelData={this.topoRawDataCache.complete}
                     resourceNodeId={this.resourceNodeId}
                     onCollapseResource={this.handleCollapseChange}
-                    onHideToolTips={this.handleHideToolTips}
+                    onHideToolTips={this.handleHideTooltips}
                     onViewService={this.handleViewServiceFromResource}
                   />
                 )}

@@ -23,12 +23,18 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+
+/**
+ * @file 拓扑图业务类型声明
+ * @description 定义拓扑图中节点、边、实体、指标、事件等业务数据结构
+ */
+
 import type { ModelConfig } from '@antv/g6';
 
-// 节点概览页类型切换tab，linkedEdge-关联边，metric-指标
+/** 节点概览页类型切换tab，linkedEdge-关联边，metric-指标 */
 export type ActiveTab = 'linkedEdge' | 'metric';
 
-// 事件分析弹窗列配置
+/** 事件分析弹窗列配置 */
 export interface EventColumnConfig {
   alias: string;
   list: EventColumnItem[];
@@ -41,10 +47,11 @@ export interface EventColumnItem {
   value: string;
 }
 
-// 事件分析弹窗选中数据配置
+/** 事件分析弹窗选中数据配置 */
 export interface EventConfig {
   [key: string]: EventConfigItem;
 }
+
 export interface EventSeries {
   alias?: string;
   datapoints: Array<[number, number]>;
@@ -61,6 +68,7 @@ export interface EventStatistics {
   event_source: Record<string, number>;
 }
 
+/** 拓扑图边数据 */
 export interface IEdge {
   [key: string]: any;
   aggregated?: boolean;
@@ -71,7 +79,7 @@ export interface IEdge {
   edge_type: string;
   events: Record<string, any>[];
   is_anomaly: boolean;
-  nodes?: any[];
+  nodes?: ITopoNode[];
   source?: string;
   source_is_anomaly?: boolean;
   source_is_on_alert?: boolean;
@@ -84,6 +92,7 @@ export interface IEdge {
   target_type?: string;
 }
 
+/** 拓扑图实体数据 */
 export interface IEntity {
   aggregated_entites: IEntity[];
   alert_all_recorved: boolean;
@@ -122,7 +131,7 @@ export interface IEntityTag {
   namespace: string;
 }
 
-// 事件详情菜单项
+/** 事件详情菜单项 */
 export interface IEventTagsItem {
   bk_biz_id: number | string;
   end_time: number; // 故障结束时间/当前时间
@@ -131,6 +140,7 @@ export interface IEventTagsItem {
   start_time: number; // 当前点击的事件的时间戳
 }
 
+/** 指标项 */
 export interface IMetricItem {
   display_by_dimensions: boolean; // 是否为多维度指标
   metric_alias: string;
@@ -139,27 +149,32 @@ export interface IMetricItem {
   time_series: Record<string, ITimeSeries>;
 }
 
+/** 事件详情数据 */
 export interface IncidentDetailData {
   begin_time?: number;
   bk_biz_id: string;
   create_time: number;
-  current_snapshot?: any;
+  /** 当前快照（结构与故障页 ISnapshot 对齐，避免循环依赖用宽松 Record） */
+  current_snapshot?: Record<string, unknown>;
   end_time: number;
   id: string;
   incident_id: string;
   wx_cs_link?: string;
 }
 
+/** 事件各数据源分析结果状态 */
 export interface IncidentResults {
   [key: string]: any;
   incident_topology: { enabled: boolean; status: string };
 }
 
+/** 弹窗位置坐标 */
 export interface IPosition {
   left: number;
   top: number;
 }
 
+/** 节点排名数据 */
 export interface IRank {
   anomaly_count: number;
   is_sub_rank: boolean;
@@ -175,12 +190,14 @@ export interface IRank {
   };
 }
 
+/** 时间序列数据 */
 export interface ITimeSeries {
   [key: string]: any;
   datapoints: Array<[number, number, number]>; // 指标数据
   unit: string;
 }
 
+/** Combo 配置（G6 ModelConfig 扩展） */
 export interface ITopoCombo extends ModelConfig {
   [key: string]: any;
   dataType?: string;
@@ -188,12 +205,14 @@ export interface ITopoCombo extends ModelConfig {
   label?: string;
 }
 
+/** 拓扑完整数据（节点 + 边 + combo） */
 export interface ITopoData {
   combos: ITopoCombo[];
   edges: IEdge[];
   nodes: ITopoNode[];
 }
 
+/** 拓扑边配置（G6 ModelConfig 扩展） */
 export interface ITopoEdge extends ModelConfig {
   aggregated: boolean;
   count: number;
@@ -202,6 +221,7 @@ export interface ITopoEdge extends ModelConfig {
   type: 'dependency' | 'invoke';
 }
 
+/** 拓扑图节点数据（G6 ModelConfig 扩展） */
 export interface ITopoNode extends ModelConfig {
   aggregated_nodes?: ITopoNode[];
   alert_all_recorved?: boolean;
@@ -221,14 +241,15 @@ export interface ITopoNode extends ModelConfig {
     alert_id: string;
     alert_name: string;
   };
-  properties: {
+  /** 节点扩展属性（部分场景可缺省） */
+  properties?: {
     aggregated_by?: string[];
     entity_category?: string;
     entity_show_type?: string;
   };
 }
 
-// 事件数据，用于构造散点图
+/** 事件散点图数据 */
 export interface MetricEvent {
   event_alias?: string;
   event_level: string;
@@ -237,6 +258,7 @@ export interface MetricEvent {
   series: EventSeries[];
 }
 
+/** 时间轴原始数据帧 */
 export interface TopoRawData {
   content: ITopoData[];
   create_time: number;
@@ -244,6 +266,7 @@ export interface TopoRawData {
   incident_id: string;
 }
 
+/** 事件分析选中配置项（内部使用） */
 interface EventConfigItem {
   is_select_all: boolean;
   list: string[];

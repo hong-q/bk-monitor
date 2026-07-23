@@ -43,7 +43,7 @@ import { useI18n } from 'vue-i18n';
 
 import { handleYAxisLabelFormatter, removeTrailingZeros } from '../utils';
 
-import type { IMetricItem, MetricEvent } from '../types';
+import type { IMetricItem, MetricEvent } from '../types/topo';
 
 const baseLineSeriesConfig = {
   type: 'line',

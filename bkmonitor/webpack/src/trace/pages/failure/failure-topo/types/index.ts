@@ -25,14 +25,10 @@
  */
 
 /**
- * @file 自定义 Combo 注册
- * @description 注册 G6 service-combo（基于 ServiceCombo）
+ * @file 类型统一入口
+ * @description 从各分类文件 re-export 所有类型，外部统一从 './types' 或 '../types' 引入
  */
-import { registerCombo } from '@antv/g6';
 
-import ServiceCombo from './service-combo';
-
-/** 注册自定义 service combo */
-export function registerTopoCombo(): void {
-  registerCombo('service-combo', ServiceCombo, 'rect');
-}
+export * from './composable';
+export * from './g6';
+export * from './topo';

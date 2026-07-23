@@ -25,14 +25,23 @@
  */
 
 /**
- * @file 自定义 Combo 注册
- * @description 注册 G6 service-combo（基于 ServiceCombo）
+ * @file combo → 画布坐标映射纯函数
+ * @description 供 failure-topo 行为与 resource-graph 行为共用，无 Vue / composable 依赖。
  */
-import { registerCombo } from '@antv/g6';
 
-import ServiceCombo from './service-combo';
+import type { CanvasByPointResult } from '../types/g6';
+import type { Graph, ICombo } from '@antv/g6';
 
-/** 注册自定义 service combo */
-export function registerTopoCombo(): void {
-  registerCombo('service-combo', ServiceCombo, 'rect');
+/**
+ * 将 combo 的包围盒转换为画布坐标系下的左上 / 右下点
+ * @param combo G6 combo item
+ * @param graph 当前 Graph 实例
+ * @returns CanvasByPointResult — combo 包围盒左上/右下在画布坐标系下的点
+ */
+export function getComboCanvasBounds(combo: ICombo, graph: Graph): CanvasByPointResult {
+  const comboBBox = combo.getBBox();
+  return {
+    topLeft: graph.getCanvasByPoint(comboBBox.x, comboBBox.y),
+    bottomRight: graph.getCanvasByPoint(comboBBox.x + comboBBox.width, comboBBox.y + comboBBox.height),
+  };
 }

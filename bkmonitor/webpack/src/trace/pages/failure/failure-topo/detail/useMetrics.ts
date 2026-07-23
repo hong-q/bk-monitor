@@ -33,7 +33,7 @@ import { useI18n } from 'vue-i18n';
 
 import { handleEndTime, scaleArrayToRange } from '../utils';
 
-import type { IncidentDetailData } from '../types';
+import type { IncidentDetailData } from '../types/topo';
 import type {
   EventColumnConfig,
   EventColumnItem,
@@ -41,7 +41,7 @@ import type {
   EventStatistics,
   IMetricItem,
   MetricEvent,
-} from '../types';
+} from '../types/topo';
 
 // 定义固定的图表连接组ID
 const CONNECT_GROUP_ID = 'incident-metric-chart-group';
