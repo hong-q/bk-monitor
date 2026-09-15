@@ -371,6 +371,8 @@ export interface IAnomalyAnalysis {
   $index?: number;
   alert_count?: number;
   alerts?: IAlertData[];
+  /** 后端生成的页面跳转或侧滑交互配置 */
+  interaction?: IInteraction;
   name?: string;
   score?: number;
   dimension_values?: {
@@ -453,6 +455,7 @@ export interface IEventsAnalysis {
   allContents?: any; // 全部事件内容列表
   contents?: any; // 事件内容的表格映射value
   fields?: Record<string, string>; // 事件内容的表格映射label
+  interaction?: IInteraction; // 事件类型层交互配置
   isGeneral: boolean; // 是否是通用事件
   title?: string; // 事件主标题
   top?: number; // 展示事件条数
@@ -460,10 +463,11 @@ export interface IEventsAnalysis {
   type?: string; // 事件所属类型
   unit?: string; // 事件主标题单位
 }
-export interface IEventsContentsData {
-  [key: string]: string;
-}
 
+export interface IEventsContentsData {
+  [key: string]: any;
+  interaction?: IInteraction; // 具体事件记录的交互配置
+}
 /** 单个 sub_panel 的 extracted_info */
 export interface IExtractedInfo {
   entities: Record<string, IEntityInfo>;
@@ -513,6 +517,22 @@ export interface IIncident {
   status_alias: string;
   update_time: number;
 }
+
+/** 故障诊断面板记录的交互协议 */
+export interface IInteraction {
+  action: 'drawer' | 'link' | 'none';
+  drawer_type?: 'event' | 'log' | 'trace';
+  url?: string;
+  version: 'v1';
+  /** 侧滑详情查询引用，由后端生成，前端必须原样回传 */
+  detail_ref?: {
+    group: string;
+    /** 分析任务 ID，与请求体顶层 incident_task_id 保持一致 */
+    incident_task_id?: number;
+    panel: string;
+    selector: Record<string, number | string>;
+  };
+}
 export interface IListItem {
   icon?: string;
   key?: string;
@@ -523,6 +543,8 @@ export interface IListItem {
 
 export interface ILogAnalysis {
   demo_log?: string;
+  /** 日志详情侧滑交互配置 */
+  interaction?: IInteraction;
   log_count?: number;
   pattern?: string;
 }
@@ -643,7 +665,9 @@ export interface ITagInfoType {
 }
 
 export interface ITraceAnalysis {
-  [key: string]: number | string; // span表格映射key-value
+  [key: string]: any; // span表格映射key-value
+  /** Trace 页面跳转交互配置 */
+  interaction?: IInteraction;
   log_count: number;
   pattern: string;
 }

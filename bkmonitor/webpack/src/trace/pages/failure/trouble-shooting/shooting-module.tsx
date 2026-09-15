@@ -29,10 +29,11 @@ import { copyText } from 'monitor-common/utils/utils';
 import VueJsonPretty from 'vue-json-pretty';
 
 import MarkdownViewer from '../../../components/markdown-editor/viewer';
-import { EVENTS_TYPE_MAP } from '../constant';
+import { EVENTS_NEED_ALL_SUB_EVENTS, EVENTS_TYPE_MAP } from '../constant';
 import { handleEndTime } from '../failure-topo/utils';
 import { TRACE_FIELD_CONFIG } from '../utils';
 import { replaceEntityInText } from './entity-replace';
+import { type IOpenDrawerContext, handleInteraction } from './interaction-handler';
 import { GENERAL_EVENT_MAX_EXPANDED_LINES, isExpandedJsonOverLineLimit } from './json-expanded-lines';
 
 import type {
@@ -42,6 +43,7 @@ import type {
   IEventsAnalysis,
   IEventsContentsData,
   IExtractedInfoList,
+  IInteraction,
   ILogAnalysis,
   IStrategyMapItem,
   ISummaryList,
@@ -56,7 +58,13 @@ import type {
  * @param showLabel 是否显示标签部分
  * @param value 要显示的值
  */
-const TableContentItem = (props: { label: string; needTitle: boolean; showLabel: boolean; value: any }) => (
+const TableContentItem = (props: {
+  label: string;
+  needJumpIcon?: boolean;
+  needTitle: boolean;
+  showLabel: boolean;
+  value: any;
+}) => (
   <span class='table-content-item'>
     {props.showLabel && (
       <span
@@ -74,6 +82,7 @@ const TableContentItem = (props: { label: string; needTitle: boolean; showLabel:
       title={props.needTitle ? String(props.value) : null}
     >
       {props.value}
+      {props.needJumpIcon && <i class='icon-monitor icon-fenxiang icon-jump-page' />}
     </span>
   </span>
 );
@@ -175,6 +184,8 @@ export function createShootingModule(
     activeIndex: Record<string, number[] | Record<string, number[]>>;
     bkzIds: string[];
     contentList: IContentList;
+    /** 各模块 display 层交互配置 */
+    displayInteractionList: Record<string, IInteraction | undefined>;
     eventsData: IEventsAnalysis[];
     extractedInfoList: IExtractedInfoList;
     goAlertList: (list: IAlertData[]) => void;
@@ -182,6 +193,8 @@ export function createShootingModule(
     handleMouseEnter: (e: MouseEvent, index: number, type: OverflowPopType) => void;
     handlePopoverClose: (item: { isShow: boolean }) => void;
     incidentDetailData: Record<string, any>;
+    /** 打开后端 interaction 指定的详情侧滑 */
+    onOpenDrawer?: (context: IOpenDrawerContext) => void;
     /** 查看全部子事件的回调函数，用于打开侧滑展示完整事件列表 */
     onViewAllEvents?: (item: IEventsAnalysis) => void;
     /** 查看完整 JSON 的回调函数，用于打开侧滑 */
@@ -194,6 +207,28 @@ export function createShootingModule(
   },
   $t: (key: string) => string
 ) {
+  /** 统一消费后端 interaction，并补充仅用于展示的侧滑标题 */
+  const executeInteraction = (interaction?: IInteraction, title?: string) => {
+    handleInteraction(interaction, context => {
+      options.onOpenDrawer?.({ ...context, title });
+    });
+  };
+
+  /**
+   * 解析事件类型父级标题可用的 interaction。
+   * 优先用 labels_mapping 类型层；general / 发布变更等无类型层时，回退到首条可交互记录（通常为 drawer）。
+   */
+  const resolveParentInteraction = (item: IEventsAnalysis): IInteraction | undefined => {
+    if (item.interaction && !['none', 'error'].includes(item.interaction.action)) {
+      return item.interaction;
+    }
+    const records = (item.allContents || item.contents || []) as IEventsContentsData[];
+    const record = records.find(
+      r => r?.interaction && (r.interaction.action === 'drawer' || r.interaction.action === 'link')
+    );
+    return record?.interaction;
+  };
+
   /**
    * 通用的Popover渲染函数
    * 用于统一处理各种类型的文本溢出提示框（多行溢出检测：scrollHeight > clientHeight）
@@ -333,7 +368,16 @@ export function createShootingModule(
   const dimensionalTitle = (item: IAnomalyAnalysis) => (
     <span class='dimensional-title'>
       {/* 显示维度名称或默认标题 */}
-      {item.name || `${$t('异常维度（组合）')} ${item.$index + 1}`}
+      <span>
+        {item.name || `${$t('异常维度（组合）')} ${item.$index + 1}`}
+        <i
+          class={['icon-monitor icon-fenxiang icon-jump-page', { 'cursor-link': item.interaction?.action === 'link' }]}
+          onClick={e => {
+            e.stopPropagation();
+            executeInteraction(item.interaction);
+          }}
+        />
+      </span>
       {/* 国际化显示的异常程度 */}
       <i18n-t
         class='red-font'
@@ -367,7 +411,7 @@ export function createShootingModule(
               tag='span'
             >
               <b
-                class='blue-txt'
+                class='cursor-link'
                 onClick={() => options.goAlertList(item.alerts)}
               >
                 {item.alert_count}
@@ -382,7 +426,7 @@ export function createShootingModule(
                 class='dimensional-footer-item'
               >
                 <span
-                  class='blue-txt'
+                  class='cursor-link'
                   onClick={(e: MouseEvent) => {
                     e.stopPropagation();
                     options.goDetail(ele);
@@ -405,7 +449,16 @@ export function createShootingModule(
     const len = options.contentList?.alerts_analysis?.length;
     return (
       <div>
-        <div class='mb-8'>{$t('故障关联的告警，统计出最异常的维度（组合）：')}</div>
+        <div class='dimensional-desc mb-8'>
+          <span>{$t('故障关联的告警，统计出最异常的维度（组合）：')}</span>
+          <span
+            class={options.displayInteractionList.alerts_analysis?.action === 'link' ? 'cursor-link' : ''}
+            onClick={() => executeInteraction(options.displayInteractionList.alerts_analysis)}
+          >
+            {$t('查看全部')}
+            <i class='icon-monitor icon-fenxiang icon-jump-page' />
+          </span>
+        </div>
         {len > 0 && (
           <Collapse
             class='dimensional-collapse inner-collapse'
@@ -430,9 +483,15 @@ export function createShootingModule(
     const config = EVENTS_TYPE_MAP[item.type as keyof typeof EVENTS_TYPE_MAP] ?? EVENTS_TYPE_MAP.general;
 
     const renderTitleInfo = () => {
-      // 父级Collapse title
+      // 父级Collapse title：类型层 interaction；general 等可回退到首条记录
       if (!isChild) {
         const keypath = item.total > 3 ? config.keypath : config.keypath2;
+        const canOpenAllEvents = EVENTS_NEED_ALL_SUB_EVENTS.has(item.type) && item.total > 3;
+        // ITSM / 应急 / 腾讯云走全部子事件侧滑，不消费 interaction
+        const parentInteraction = EVENTS_NEED_ALL_SUB_EVENTS.has(item.type)
+          ? undefined
+          : resolveParentInteraction(item);
+        const hasInteraction = !!parentInteraction;
         return (
           <>
             <span
@@ -445,11 +504,17 @@ export function createShootingModule(
               <i18n-t keypath={keypath}>
                 <span
                   style={{ fontWeight: '700' }}
-                  class={item.total > 3 && 'cursor-link'}
+                  class={canOpenAllEvents || hasInteraction ? 'cursor-link' : ''}
                   onClick={(e: MouseEvent) => {
-                    if (item.total <= 3) return;
                     e.stopPropagation();
-                    options.onViewAllEvents?.(item);
+                    // ITSM、应急、腾讯云事件继续使用已有的全部子事件侧滑
+                    if (EVENTS_NEED_ALL_SUB_EVENTS.has(item.type)) {
+                      if (!canOpenAllEvents) return;
+                      options.onViewAllEvents?.(item);
+                      return;
+                    }
+                    // k8s/主机/tmp 为 link；general 等无类型层时用首条 drawer 打开事件表格侧滑
+                    executeInteraction(parentInteraction, item.title || $t('事件详情'));
                   }}
                 >
                   {item.total}
@@ -463,21 +528,49 @@ export function createShootingModule(
       }
       // 子项Collapse——tmp事件title
       if (item.type === 'tmp_events') {
-        return <span style={{ fontWeight: '600' }}>{subContent.event_name}</span>;
+        const canInteract = subContent.interaction?.action === 'link' || subContent.interaction?.action === 'drawer';
+        return (
+          <span
+            style={{ fontWeight: '600' }}
+            class={canInteract ? 'cursor-link' : ''}
+            onClick={(e: MouseEvent) => {
+              if (!canInteract) return;
+              e.stopPropagation();
+              executeInteraction(subContent.interaction, String(subContent.event_name || $t('事件详情')));
+            }}
+          >
+            {subContent.event_name}
+          </span>
+        );
       }
       // 子项Collapse——k8s、host事件title
       if (['k8s_warning_events', 'alert_system_events'].includes(item.type)) {
+        const canInteract = subContent.interaction?.action === 'link' || subContent.interaction?.action === 'drawer';
         return (
           <>
             <span
               style={{ fontWeight: '600' }}
-              class='mr-2'
+              class={['mr-2', { 'cursor-link': canInteract }]}
+              onClick={(e: MouseEvent) => {
+                if (!canInteract) return;
+                e.stopPropagation();
+                executeInteraction(subContent.interaction, String(subContent.event_name || $t('事件详情')));
+              }}
             >
               {subContent.event_name}
             </span>
             <span style={{ fontWeight: 'normal' }}>
               <i18n-t keypath={'（共 {0} 个{1}）'}>
-                <span style={{ fontWeight: '700' }}>{subContent._sub_count}</span>
+                <span
+                  style={{ fontWeight: '700' }}
+                  class={canInteract ? 'cursor-link' : ''}
+                  onClick={(e: MouseEvent) => {
+                    e.stopPropagation();
+                    executeInteraction(subContent.interaction, String(subContent.event_name || $t('事件详情')));
+                  }}
+                >
+                  {subContent._sub_count}
+                </span>
                 <span>{subContent._sub_unit}</span>
               </i18n-t>
             </span>
@@ -549,7 +642,7 @@ export function createShootingModule(
   };
   // 事件分析子Collapse内容
   const eventChildContent = (item: IEventsAnalysis, subContent: IEventsContentsData) => {
-    // 如果是通用事件，则渲染JSON
+    // 通用事件渲染 JSON 预览
     if (item.isGeneral) {
       const rawData = subContent || {};
       const jsonData: Record<string, any> = rawData && typeof rawData === 'object' ? { ...rawData } : rawData;
@@ -628,6 +721,9 @@ export function createShootingModule(
           return (
             <TableContentItem
               key={key}
+              needJumpIcon={
+                ['tmp_events', 'k8s_warning_events', 'alert_system_events'].includes(item.type) && key === 'event_name'
+              }
               label={value}
               needTitle={false}
               showLabel={item.type !== 'tencent_cloud_notice_events'} // 特殊类型不显示label
@@ -680,7 +776,16 @@ export function createShootingModule(
         keypath='（共 {0} 条日志）'
         tag='span'
       >
-        <span style='font-weight: 700;margin: 0 2px;'> {item.log_count} </span>
+        <span
+          style='font-weight: 700;margin: 0 2px;'
+          class={item.interaction?.action === 'drawer' ? 'cursor-link' : ''}
+          // onClick={(e: MouseEvent) => {
+          //   e.stopPropagation();
+          //   executeInteraction(item.interaction, $t('日志详情'));
+          // }}
+        >
+          {item.log_count}
+        </span>
       </i18n-t>
     </span>
   );
@@ -737,7 +842,17 @@ export function createShootingModule(
         keypath='（共 {0} 条异常信息）'
         tag='span'
       >
-        <span style='font-weight: 700;margin: 0 2px;'> {item.log_count} </span>
+        <span
+          style='font-weight: 700;margin: 0 2px;'
+          class={item.interaction?.action === 'link' ? 'cursor-link' : ''}
+          onClick={(e: MouseEvent) => {
+            e.stopPropagation();
+            executeInteraction(item.interaction);
+          }}
+        >
+          {' '}
+          {item.log_count}{' '}
+        </span>
       </i18n-t>
     </span>
   );

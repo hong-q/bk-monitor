@@ -44,7 +44,7 @@ import { useI18n } from 'vue-i18n';
 
 import { useTable } from './hooks/use-table';
 
-import type { TClickMenuOpt } from './typing';
+import type { EClickMenuType, TClickMenuOpt } from './typing';
 
 import './log-table-new.scss';
 
@@ -71,6 +71,10 @@ export default defineComponent({
       type: Object as PropType<TdPrimaryTableProps['headerAffixedTop']>,
       default: () => null,
     },
+    allowedMenuTypes: {
+      type: Array as PropType<EClickMenuType[]>,
+      default: () => undefined,
+    },
   },
   emits: {
     clickMenu: (_opt: TClickMenuOpt) => true,
@@ -95,6 +99,7 @@ export default defineComponent({
       setWrapWidth,
       setDefaultFieldWidth,
     } = useTable({
+      allowedMenuTypes: props.allowedMenuTypes,
       onClickMenu: opt => {
         emit('clickMenu', opt);
       },

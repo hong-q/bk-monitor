@@ -104,6 +104,10 @@ export default defineComponent({
       >,
       default: () => null,
     },
+    showHeaderOperate: {
+      type: Boolean,
+      default: true,
+    },
   },
   emits: ['goEvent'],
   setup(props, { emit }) {
@@ -368,15 +372,15 @@ export default defineComponent({
         loading.value = true;
       }
       try {
-      const res = await props.getTableData({
-        offset: tableData.offset,
-        limit: tableData.limit,
-        sources: sourceType.value,
-        sort: sort.value ? [`${sort.value.descending ? '-' : ''}${sort.value.sortBy}`] : [],
-      });
-      if (current !== requestId) return;
-      tableData.data = [...tableData.data, ...res.data];
-      isEnd.value = res.data.length < tableData.limit;
+        const res = await props.getTableData({
+          offset: tableData.offset,
+          limit: tableData.limit,
+          sources: sourceType.value,
+          sort: sort.value ? [`${sort.value.descending ? '-' : ''}${sort.value.sortBy}`] : [],
+        });
+        if (current !== requestId) return;
+        tableData.data = [...tableData.data, ...res.data];
+        isEnd.value = res.data.length < tableData.limit;
       } catch {
         if (current === requestId) error.value = true;
       } finally {
@@ -441,6 +445,8 @@ export default defineComponent({
     };
 
     const loadCounts = async () => {
+      // 仅在展示头部操作区时才获取事件来源统计数据
+      if (!props.showHeaderOperate) return;
       countLoading.value = true;
       countError.value = false;
       await props
@@ -498,7 +504,7 @@ export default defineComponent({
     const allItem = this.sourceTypeOptions.find(item => item.value === SourceTypeEnum.ALL);
     return (
       <div class='alarm-center-detail-panel-alarm-relation-event-table'>
-        <div class='header-operate'>
+        {this.showHeaderOperate && (<div class='header-operate'>
           <span style='margin-right: 8px;'>{window.i18n.t('事件来源')}:</span>
           <Checkbox
             class='mr-24'
@@ -573,7 +579,7 @@ export default defineComponent({
               class='icon-monitor icon-fenxiang'
             />
           </Button>
-        </div>
+        </div>)}
         <DetailLoadStatus error={this.countError} onRetry={this.retryCounts} />
         <DetailLoadStatus error={this.error} onRetry={this.retry} />
         {this.loading ? (
@@ -611,10 +617,11 @@ export default defineComponent({
         )}
         <div
           ref='scrollRef'
-          style={{ display: this.tableData.data.length && !this.error ? 'flex' : 'none' }}
-          class='panel-event-table-scroll-loading'
+          style={this.showHeaderOperate ? { display: this.tableData.data.length && !this.error ? 'flex' : 'none' } : undefined}
+          class={this.showHeaderOperate ? 'panel-event-table-scroll-loading' : 'panel-event-table-scroll-sentinel'}
+          aria-hidden={!this.showHeaderOperate}
         >
-          <span>{this.isEnd ? this.$t('到底了') : this.scrollLoading ? this.$t('正加载更多内容…') : ''}</span>
+          {this.showHeaderOperate && <span>{this.isEnd ? this.$t('到底了') : this.scrollLoading ? this.$t('正加载更多内容…') : ''}</span>}
         </div>
       </div>
     );

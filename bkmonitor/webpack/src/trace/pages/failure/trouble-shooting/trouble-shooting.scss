@@ -156,10 +156,6 @@
         width: 100%;
         display: inline-flex;
         justify-content: space-between;
-
-        i {
-          color: #3a84ff;
-        }
       }
     }
   }
@@ -219,8 +215,6 @@
 
     // 查看完整操作按钮
     .view-full-action {
-      color: #3a84ff;
-      cursor: pointer;
       font-size: 12px;
       font-family:
         -apple-system, 'Helvetica Neue', 'Helvetica', 'Arial', 'PingFang SC', 'Microsoft YaHei', SimSun, sans-serif;
@@ -365,17 +359,15 @@
         }
       }
 
-      .slider-icon {
+      .independent-view-icon {
         position: absolute;
         top: 19px;
         right: 16px;
-        color: #3a84ff;
-        cursor: pointer;
         display: none;
       }
 
       &:hover {
-        .slider-icon {
+        .independent-view-icon {
           display: inline-block;
         }
       }
@@ -389,16 +381,14 @@
       border-radius: 4px;
       padding: 14px 16px 16px;
 
-      .slider-icon {
+      .independent-view-icon {
         position: absolute;
         right: 16px;
-        color: #3a84ff;
-        cursor: pointer;
         display: none;
       }
 
       &:hover {
-        .slider-icon {
+        .independent-view-icon {
           display: inline-block;
         }
       }
@@ -432,6 +422,12 @@
         @include collapse-content-styles;
       }
 
+      .dimensional-desc {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
       .dimensional-collapse {
         margin-left: 0 !important;
 
@@ -459,11 +455,6 @@
             display: block;
             line-height: 24px;
             color: #313238;
-          }
-
-          .blue-txt {
-            color: #3a84ff;
-            cursor: pointer;
           }
         }
       }
@@ -556,14 +547,6 @@
         }
       }
 
-      .right-icon {
-        position: absolute;
-        right: 8px;
-        color: #3a84ff;
-        font-size: 12px;
-        cursor: pointer;
-      }
-
       .card-summary {
         color: #313238;
         line-height: 20px;
@@ -604,6 +587,12 @@
         background-color: #f2f4fa;
       }
     }
+  }
+
+  .icon-jump-page {
+    font-size: 11px;
+    font-weight: normal;
+    margin-left: 5px;
   }
 
   .mr-2 {
@@ -785,5 +774,29 @@
     @include collapse-content-styles;
     @include event-collapse-styles;
     @include general-event-content-styles;
+  }
+}
+
+// 日志侧滑
+.log-viewer-slider,
+.event-table-slider {
+  .bk-modal-content {
+    height: 100%;
+    background: #f2f6fc;
+    padding: 16px;
+  }
+
+  &-content {
+    background-color: #fff;
+    border: 1px solid #e4e9f2;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px 0 rgba(25, 25, 41, 0.039);
+    padding: 16px;
+  }
+}
+
+.event-table-slider {
+  .t-table__content {
+    overflow: hidden;
   }
 }

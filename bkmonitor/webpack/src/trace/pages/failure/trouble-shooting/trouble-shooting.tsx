@@ -36,17 +36,26 @@ import {
   watch,
 } from 'vue';
 
-import { bkTooltips, Collapse, Dropdown, Exception, Loading, Sideslider } from 'bkui-vue';
-import { incidentDiagnosis } from 'monitor-api/modules/incident';
+import { bkTooltips, Collapse, Dropdown, Exception, Loading, Message, Sideslider } from 'bkui-vue';
+import { getPanelDetail, incidentDiagnosis } from 'monitor-api/modules/incident';
+import { copyText } from 'monitor-common/utils';
 import { useI18n } from 'vue-i18n';
 import VueJsonPretty from 'vue-json-pretty';
 import { useRoute } from 'vue-router';
 
 import MarkdownViewer from '../../../components/markdown-editor/viewer';
+import EventTable from '../../alarm-center/common-detail/components/panel-event/components/event-table';
+import LogTableNew from '../../alarm-center/common-detail/components/panel-log/log-table/log-table-new';
+import TableFieldSetting from '../../alarm-center/common-detail/components/panel-log/log-table/table-field-setting';
+import {
+  type TClickMenuOpt,
+  EClickMenuType,
+} from '../../alarm-center/common-detail/components/panel-log/log-table/typing';
 import { EVENTS_TYPE_MAP } from '../constant';
 import { checkOverflow } from '../utils';
 import { replaceEntityInText } from './entity-replace';
 import { createShootingModule } from './shooting-module';
+import { normalizeEventTableRow } from './utils';
 
 import type { IncidentDetailData } from '../failure-topo/types';
 import type {
@@ -55,11 +64,13 @@ import type {
   IEventsAnalysis,
   IEventsContentsData,
   IExtractedInfoList,
+  IInteraction,
   IListItem,
   IStrategyMapItem,
   ISummaryList,
   OverflowPopType,
 } from '../types';
+import type { IOpenDrawerContext } from './interaction-handler';
 
 import './trouble-shooting.scss';
 
@@ -84,6 +95,8 @@ export default defineComponent({
     const summaryList: ISummaryList = reactive({});
     // 实体信息映射 - 按 sub_panel 存储 extracted_info
     const extractedInfoList: IExtractedInfoList = reactive({});
+    // 各模块 display 层的交互配置，例如告警异常维度“查看全部”
+    const displayInteractionList = reactive<Record<string, IInteraction | undefined>>({});
     // 事件分析数据整理
     const eventsData = shallowRef<IEventsAnalysis[]>([]);
     const loadingList = reactive({
@@ -128,6 +141,127 @@ export default defineComponent({
     const showAllEventsSideslider = shallowRef(false);
     // 当前查看全部子事件的父级事件数据
     const currentAllEventsItem = shallowRef<IEventsAnalysis | null>(null);
+    // 是否展示日志侧滑（日志侧滑详情当前暂不联调接入）
+    const showLogSideslider = shallowRef(false);
+    // 当前详情侧滑上下文及分页缓存，detail_ref 始终原样回传
+    const currentDrawerContext = shallowRef<IOpenDrawerContext | null>(null);
+    const drawerPayloadCache = new Map<string, Promise<Record<string, any>>>();
+    const drawerRenderKey = shallowRef(0);
+    // 侧滑详情请求错误信息
+    const drawerErrorMessage = shallowRef('');
+    const displayColumnFields = shallowRef<string[]>([]);
+    const tableColumnsSetting = shallowRef<Array<{ id: string; name: string; type?: string }>>([]);
+    const logTableRefreshKey = shallowRef('');
+
+    /** 获取侧滑详情数据，同一侧滑同一页只发起一次请求 */
+    const fetchDrawerPayload = (page: number, pageSize: number) => {
+      const context = currentDrawerContext.value;
+      if (!context?.detailRef) {
+        return Promise.resolve({});
+      }
+
+      const cacheKey = `${context.drawerType}:${page}:${pageSize}`;
+      if (!drawerPayloadCache.has(cacheKey)) {
+        // incident_id 必须使用 BKFara 故障 ID，禁止回退到 URL 文档 ID
+        const incidentId = Number(incidentDetailData.value?.incident_id);
+        // incident_task_id 优先取 detail_ref，其次路由/extra_info
+        const incidentTaskId =
+          context.detailRef.incident_task_id ??
+          route.query.incident_task_id ??
+          incidentDetailData.value?.extra_info?.task_id;
+
+        if (!incidentId || !incidentTaskId) {
+          const message = t('缺少故障分析任务信息，无法打开详情');
+          drawerErrorMessage.value = message;
+          return Promise.reject(new Error(message));
+        }
+
+        const requestParams = {
+          bk_biz_id: Number(bkzIds.value[0]),
+          incident_id: incidentId,
+          incident_task_id: Number(incidentTaskId),
+          drawer_type: context.drawerType,
+          // detail_ref 必须与诊断结果完全一致，禁止增删改字段
+          detail_ref: context.detailRef,
+          page,
+          page_size: pageSize,
+        };
+        const requestPromise = getPanelDetail(requestParams)
+          .then(res => {
+            // 请求封装已解包 Resource 标准响应的 data 层
+            if (res?.drawer_type && res.drawer_type !== context.drawerType) {
+              throw new Error(t('侧滑详情类型不匹配'));
+            }
+            drawerErrorMessage.value = '';
+            return res?.payload || {};
+          })
+          .catch(err => {
+            drawerPayloadCache.delete(cacheKey);
+            const message = err?.message || t('获取侧滑详情失败');
+            drawerErrorMessage.value = message;
+            Message({
+              message,
+              theme: 'error',
+            });
+            throw err;
+          });
+        drawerPayloadCache.set(cacheKey, requestPromise);
+      }
+      return drawerPayloadCache.get(cacheKey);
+    };
+
+    /** 日志表格字段元数据直接消费详情接口 payload（日志侧滑暂不联调） */
+    const getLogFieldsData = async () => {
+      const payload = await fetchDrawerPayload(1, 30);
+      const fields = payload.fields || [];
+      const payloadDisplayFields =
+        payload.user_custom_config?.displayFields || payload.display_fields || fields.map(item => item.field_name);
+      displayColumnFields.value = payloadDisplayFields;
+      tableColumnsSetting.value = fields.map(item => ({
+        id: item.field_name,
+        name: item.query_alias || item.field_name,
+        type: item.field_type,
+      }));
+      return payload;
+    };
+
+    /** 根据 LogTableNew 的 offset 换算详情接口页码（日志侧滑暂不联调） */
+    const getLogTableData = async ({ offset = 0, size = 30 }) => {
+      return fetchDrawerPayload(Math.floor(offset / size) + 1, size);
+    };
+    // 字段设置确认回调（更新展示字段）
+    const handleDisplayColumnFieldsChange = (val: string[]) => {
+      displayColumnFields.value = val;
+    };
+    // 日志表格字段隐藏（expand-content 中 icon-mc-invisible 点击）
+    const handleRemoveField = (fieldName: string) => {
+      displayColumnFields.value = displayColumnFields.value.filter(item => item !== fieldName);
+    };
+    // 日志表格字段展示（expand-content 中 icon-mc-visual 点击）
+    const handleAddField = (fieldName: string) => {
+      if (displayColumnFields.value.includes(fieldName)) {
+        return;
+      }
+      displayColumnFields.value = [...displayColumnFields.value, fieldName];
+    };
+    // 日志侧滑表格只允许"复制"菜单项
+    const logAllowedMenuTypes = [EClickMenuType.Copy];
+    // 日志表格右键菜单回调（处理复制逻辑）
+    const handleLogClickMenu = (opt: TClickMenuOpt) => {
+      if (opt.type === EClickMenuType.Copy) {
+        copyText(opt.value, msg => {
+          Message({
+            message: msg,
+            theme: 'error',
+          });
+          return;
+        });
+        Message({
+          message: t('复制成功'),
+          theme: 'success',
+        });
+      }
+    };
     const MODULE_LIST = [
       {
         name: t('处置建议'),
@@ -290,16 +424,18 @@ export default defineComponent({
               ? (Object.entries(res.contents)
                   .map(([key, value]) => {
                     const fields = res.display?.fields[key] || {};
-                    const title = res.display?.labels_mapping[key]?.label || '';
+                    const labelConfig = res.display?.labels_mapping[key] || {};
+                    const title = labelConfig.label || '';
                     return {
                       type: key,
                       title,
-                      top: res.display?.labels_mapping[key]?.top || 0,
-                      unit: res.display?.labels_mapping[key]?.unit || '',
+                      top: labelConfig.top || 0,
+                      unit: labelConfig.unit || '',
                       total: res.display?.statistics[key]?.total || 0,
                       contents: (value as any as IEventsContentsData[]).slice(0, 3), // 只展示前3条
                       allContents: value,
                       fields,
+                      interaction: labelConfig.interaction,
                       isGeneral: !(key in EVENTS_TYPE_MAP),
                     };
                   })
@@ -321,6 +457,7 @@ export default defineComponent({
           }
           summaryList[key] = res.individual_summary || '';
           extractedInfoList[key] = res.extracted_info || undefined;
+          displayInteractionList[key] = res.display?.interaction;
           const { sub_panels } = props.panelConfig;
           loadingList[key] = sub_panels[key].status === 'running';
         })
@@ -328,6 +465,7 @@ export default defineComponent({
           contentList[key] = '';
           summaryList[key] = '';
           extractedInfoList[key] = undefined;
+          displayInteractionList[key] = undefined;
           loadingList[key] = false;
         });
     };
@@ -425,6 +563,54 @@ export default defineComponent({
       return true;
     };
 
+    // 是否展示事件表格侧滑
+    const showEventTableSideslider = shallowRef(false);
+    /** 接收 shooting-module 的 drawer 交互并打开对应侧滑 */
+    const onOpenDrawer = async (context: IOpenDrawerContext) => {
+      // 日志侧滑详情暂未接入联调，直接忽略
+      if (context.drawerType === 'log') {
+        return;
+      }
+      currentDrawerContext.value = context;
+      drawerPayloadCache.clear();
+      drawerErrorMessage.value = '';
+      drawerRenderKey.value += 1;
+      displayColumnFields.value = [];
+      tableColumnsSetting.value = [];
+      logTableRefreshKey.value = String(drawerRenderKey.value);
+      showLogSideslider.value = false;
+
+      try {
+        // 先拉取详情，确保错误态可在侧滑打开前捕获
+        await fetchDrawerPayload(1, 30);
+        showEventTableSideslider.value = context.drawerType === 'event';
+      } catch {
+        // 接口失败时仍打开侧滑展示错误态，禁止降级为页面跳转
+        showEventTableSideslider.value = context.drawerType === 'event';
+      }
+    };
+
+    /**
+     * 事件表格直接消费 panel_detail 的 payload.list，
+     * 不根据 query_config 再发起事件检索请求。
+     */
+    const getEventTableData = async (params: { limit: number; offset: number; sort: string[]; sources: string[] }) => {
+      try {
+        const payload = await fetchDrawerPayload(Math.floor(params.offset / params.limit) + 1, params.limit);
+        const list = (payload.list || []).map((item, index) => normalizeEventTableRow(item, params.offset + index));
+        return {
+          data: list,
+          // 分页总数优先使用 query_config.total
+          total: payload.query_config?.total ?? payload.total ?? list.length,
+        };
+      } catch {
+        return {
+          data: [],
+          total: 0,
+        };
+      }
+    };
+
     return {
       t,
       bkzIds,
@@ -432,6 +618,7 @@ export default defineComponent({
       isAllCollapsed,
       contentList,
       eventsData,
+      displayInteractionList,
       summaryList,
       extractedInfoList,
       loadingList,
@@ -451,6 +638,23 @@ export default defineComponent({
       showAllEventsSideslider,
       currentAllEventsItem,
       onViewAllEvents,
+      showLogSideslider,
+      showEventTableSideslider,
+      currentDrawerContext,
+      drawerRenderKey,
+      drawerErrorMessage,
+      onOpenDrawer,
+      getEventTableData,
+      displayColumnFields,
+      tableColumnsSetting,
+      logTableRefreshKey,
+      getLogFieldsData,
+      getLogTableData,
+      handleDisplayColumnFieldsChange,
+      handleRemoveField,
+      handleAddField,
+      logAllowedMenuTypes,
+      handleLogClickMenu,
       popoverState,
       sliderPopoverState,
       activeIndex,
@@ -473,6 +677,7 @@ export default defineComponent({
       incidentDetailData: this.incidentDetailData,
       contentList: this.contentList,
       eventsData: this.eventsData,
+      displayInteractionList: this.displayInteractionList,
       summaryList: this.summaryList,
       extractedInfoList: this.extractedInfoList,
       activeIndex: this.activeIndex,
@@ -483,6 +688,7 @@ export default defineComponent({
       goDetail: this.goDetail,
       onViewAllEvents: this.onViewAllEvents,
       onViewFullJson: this.onViewFullJson,
+      onOpenDrawer: this.onOpenDrawer,
     });
 
     // 缓存主内容区和侧边栏的shooting modules
@@ -581,7 +787,7 @@ export default defineComponent({
                 class='ai-card'
               >
                 <i
-                  class='icon-monitor icon-chakan1 slider-icon'
+                  class='icon-monitor icon-chakan1 independent-view-icon cursor-link'
                   v-bk-tooltips={this.t('独立查看')}
                   onClick={() => {
                     this.toggleSlider('panel-summary');
@@ -614,7 +820,7 @@ export default defineComponent({
                   >
                     {this.subPanels[item.key]?.status !== 'failed' && (
                       <i
-                        class='icon-monitor icon-chakan1 slider-icon'
+                        class='icon-monitor icon-chakan1 independent-view-icon cursor-link'
                         v-bk-tooltips={this.t('独立查看')}
                         onClick={() => {
                           this.toggleSlider(item.id);
@@ -749,6 +955,95 @@ export default defineComponent({
                     showLine={false}
                     showLineNumber={true}
                     theme='dark'
+                  />
+                )}
+              </div>
+            ),
+          }}
+        </Sideslider>
+
+        {/* 日志侧滑 */}
+        <Sideslider
+          width={960}
+          extCls={'log-viewer-slider'}
+          isShow={this.showLogSideslider}
+          quickClose={true}
+          zIndex={2700}
+          onClosed={() => {
+            this.showLogSideslider = false;
+          }}
+        >
+          {{
+            header: () => this.t('日志详情'),
+            default: () => (
+              <div class='log-viewer-slider-content'>
+                <LogTableNew
+                  key={this.drawerRenderKey}
+                  allowedMenuTypes={this.logAllowedMenuTypes}
+                  displayFields={this.displayColumnFields}
+                  getFieldsData={this.getLogFieldsData}
+                  getTableData={this.getLogTableData}
+                  headerAffixedTop={{ offsetTop: -60 }}
+                  refreshKey={this.logTableRefreshKey}
+                  onAddField={this.handleAddField}
+                  onClickMenu={this.handleLogClickMenu}
+                  onRemoveField={this.handleRemoveField}
+                >
+                  {{
+                    settingBtn: () => (
+                      <TableFieldSetting
+                        class='table-field-setting'
+                        sourceList={this.tableColumnsSetting}
+                        targetList={this.displayColumnFields}
+                        onConfirm={this.handleDisplayColumnFieldsChange}
+                      />
+                    ),
+                    empty: () => (
+                      <Exception type='building'>
+                        <span style='margin: 0 24px 16px 24px;font-size: 14px;color: rgb(151, 155, 165);display: inline-block;'>
+                          {this.t('暂无关联日志')}
+                        </span>
+                      </Exception>
+                    ),
+                  }}
+                </LogTableNew>
+              </div>
+            ),
+          }}
+        </Sideslider>
+
+        {/* 事件表格侧滑 */}
+        <Sideslider
+          width={960}
+          extCls={'event-table-slider'}
+          isShow={this.showEventTableSideslider}
+          quickClose={true}
+          zIndex={2700}
+          onClosed={() => {
+            this.showEventTableSideslider = false;
+          }}
+        >
+          {{
+            header: () => (
+              <div class='event-table-slider-header'>
+                <span class='mr-2'>{this.currentDrawerContext?.title || this.t('事件详情')}</span>
+              </div>
+            ),
+            default: () => (
+              <div class='event-table-slider-content'>
+                {this.drawerErrorMessage ? (
+                  <Exception
+                    class='exception-wrap-item'
+                    description={this.drawerErrorMessage}
+                    scene='part'
+                    title={this.t('查询异常')}
+                    type='500'
+                  />
+                ) : (
+                  <EventTable
+                    key={this.drawerRenderKey}
+                    getTableData={this.getEventTableData}
+                    showHeaderOperate={false}
                   />
                 )}
               </div>
