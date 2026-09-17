@@ -39,12 +39,12 @@ import {
 
 import { type TableSort, type TdPrimaryTableProps, PrimaryTable } from '@blueking/tdesign-ui';
 import { debounce } from 'lodash';
-import { DetailTableSkeleton, DetailLoadStatus } from '@/pages/alarm-center/common-detail/detail-loading';
 import { useI18n } from 'vue-i18n';
 
 import { useTable } from './hooks/use-table';
+import { DetailLoadStatus, DetailTableSkeleton } from '@/pages/alarm-center/common-detail/detail-loading';
 
-import type { EClickMenuType, TClickMenuOpt } from './typing';
+import type { TClickMenuOpt } from './typing';
 
 import './log-table-new.scss';
 
@@ -71,10 +71,6 @@ export default defineComponent({
       type: Object as PropType<TdPrimaryTableProps['headerAffixedTop']>,
       default: () => null,
     },
-    allowedMenuTypes: {
-      type: Array as PropType<EClickMenuType[]>,
-      default: () => undefined,
-    },
   },
   emits: {
     clickMenu: (_opt: TClickMenuOpt) => true,
@@ -99,7 +95,6 @@ export default defineComponent({
       setWrapWidth,
       setDefaultFieldWidth,
     } = useTable({
-      allowedMenuTypes: props.allowedMenuTypes,
       onClickMenu: opt => {
         emit('clickMenu', opt);
       },

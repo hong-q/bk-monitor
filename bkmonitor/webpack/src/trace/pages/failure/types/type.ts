@@ -387,7 +387,7 @@ export interface IContentList {
   alerts_analysis?: IAnomalyAnalysis[];
   anomaly_analysis?: IAnomalyAnalysis[];
   events_analysis?: IEventsAnalysis[];
-  logs_analysis?: Record<string, ILogAnalysis[]>;
+  logs_analysis?: Record<string, ILogAnalysis[] | Record<string, string[]>>;
   suggestion?: string;
   summary?: string;
   trace_analysis?: ITraceAnalysis[];
@@ -520,7 +520,7 @@ export interface IIncident {
 
 /** 故障诊断面板记录的交互协议 */
 export interface IInteraction {
-  action: 'drawer' | 'link' | 'none';
+  action: 'drawer' | 'error' | 'link' | 'none';
   drawer_type?: 'event' | 'log' | 'trace';
   url?: string;
   version: 'v1';
@@ -531,6 +531,12 @@ export interface IInteraction {
     incident_task_id?: number;
     panel: string;
     selector: Record<string, number | string>;
+  };
+  /** action=error 时的错误详情（缺参、越权等） */
+  error?: {
+    code: string;
+    missing_params?: string[];
+    target?: string;
   };
 }
 export interface IListItem {

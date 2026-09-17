@@ -35,16 +35,19 @@ export interface IOpenDrawerContext {
 /**
  * 根据后端返回的交互协议执行页面跳转或打开详情侧滑。
  * URL 与详情查询条件均由后端提供，前端不做拼接或修改。
+ * action=error / none 时不执行任何跳转或侧滑。
  */
 export function handleInteraction(
   interaction: IInteraction | undefined,
   onOpenDrawer: (context: IOpenDrawerContext) => void
 ) {
-  if (!interaction || interaction.action === 'none') {
+  // none、error 或缺少协议时不跳转、不打开侧滑
+  if (!interaction || ['none', 'error'].includes(interaction.action)) {
     return;
   }
 
-  if (interaction.action === 'link') {
+  // 外链，以及 trace，都走页面跳转，不进入事件/日志侧滑
+  if (interaction.action === 'link' || interaction.drawer_type === 'trace') {
     if (interaction.url) {
       window.open(interaction.url, '_blank');
     }

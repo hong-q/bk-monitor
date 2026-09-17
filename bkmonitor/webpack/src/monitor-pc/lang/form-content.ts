@@ -214,6 +214,7 @@ export default {
   '（共 {0} 个{1}，展示 {2} 如下）': ' (total {0} {1}, show {2} below)',
   '（共 {0} 个{1}，示例如下）': ' (total {0} {1}, example below)',
   '（共 {0} 个事件，示例如下）': ' (total {0} events, example below)',
+  聚类结果: 'Cluster result',
   '示例日志：': 'Example log:',
   '（共 {0} 条日志）': ' (total {0} logs)',
   独立查看: 'View independently',

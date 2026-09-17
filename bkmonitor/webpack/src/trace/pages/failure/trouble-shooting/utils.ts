@@ -169,3 +169,101 @@ export const normalizeEventTableRow = (item: Record<string, any>, index: number)
     origin_data: originData,
   };
 };
+
+/** 日志侧滑默认优先展示的列（按 payload 中实际存在的字段过滤） */
+const DEFAULT_LOG_DISPLAY_FIELD_PRIORITY = [
+  'dtEventTimeStamp',
+  'requested_at',
+  'method',
+  '_path',
+  'path',
+  'status_code',
+  'host',
+  'result',
+  'code',
+  'log',
+];
+
+/**
+ * 根据字段名与样本值推断 LogTableNew 所需的 field_type
+ */
+const inferLogFieldType = (fieldName: string, sampleValue: unknown): string => {
+  if (/time|date|timestamp/i.test(fieldName)) {
+    return 'date';
+  }
+  if (typeof sampleValue === 'number') {
+    return 'long';
+  }
+  if (typeof sampleValue === 'boolean') {
+    return 'boolean';
+  }
+  if (sampleValue && typeof sampleValue === 'object') {
+    return 'object';
+  }
+  return 'text';
+};
+
+/**
+ * 统一日志侧滑 fields 结构。
+ * 字段接口和 panel_detail 都可能返回数组或字段 map；故障侧滑只消费系统默认
+ * display_fields，不读取告警/BKLog 的 user_custom_config。
+ */
+export const normalizeLogFieldsPayload = (payload: any) => {
+  if (!payload || typeof payload !== 'object') {
+    return { fields: [], display_fields: [] as string[] };
+  }
+
+  const rawFields = payload.fields;
+  let fields: Array<{
+    [key: string]: any;
+    field_name: string;
+    field_type: string;
+    max_length?: number;
+    query_alias: string;
+  }> = [];
+
+  if (Array.isArray(rawFields)) {
+    fields = rawFields
+      .filter(item => item && typeof item === 'object')
+      .map(item => ({
+        ...item,
+        field_name: item.field_name || item.query_alias || item.field_alias || '',
+        query_alias: item.query_alias || item.field_alias || item.field_name || '',
+        field_type: item.field_type || 'text',
+      }))
+      .filter(item => item.field_name);
+  } else if (rawFields && typeof rawFields === 'object') {
+    const sampleRow = payload.list?.[0] || payload.origin_log_list?.[0] || {};
+    fields = Object.entries(rawFields).map(([fieldName, meta]) => {
+      const sampleValue = fieldName.includes('.') ? undefined : sampleRow[fieldName];
+      const metaObj = meta && typeof meta === 'object' ? (meta as Record<string, any>) : {};
+      return {
+        ...metaObj,
+        field_name: fieldName,
+        query_alias: fieldName,
+        field_type: inferLogFieldType(fieldName, sampleValue),
+        max_length: metaObj.max_length,
+      };
+    });
+  }
+
+  const fieldNames = fields.map(item => item.field_name);
+  const responseDisplayFields = Array.isArray(payload.display_fields)
+    ? payload.display_fields.filter(field => fieldNames.includes(field))
+    : [];
+  const preferred = DEFAULT_LOG_DISPLAY_FIELD_PRIORITY.filter(name => fieldNames.includes(name));
+
+  return {
+    ...payload,
+    fields,
+    display_fields: responseDisplayFields.length
+      ? responseDisplayFields
+      : preferred.length
+        ? preferred
+        : fieldNames.slice(0, 8),
+  };
+};
+
+/** 字段设置确认时，空选择恢复接口返回的默认展示字段。 */
+export const resolveLogDisplayFields = (fields: string[], defaultFields: string[]) =>
+  fields.length ? [...fields] : [...defaultFields];

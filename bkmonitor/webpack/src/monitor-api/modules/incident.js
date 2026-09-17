@@ -26,6 +26,7 @@ export const alertIncidentDetail = request('GET', 'rest/v2/incident/alert_incide
 export const incidentResults = request('GET', 'rest/v2/incident/incident_results/');
 export const incidentDiagnosis = request('POST', 'rest/v2/incident/incident_diagnosis/');
 export const getPanelDetail = request('POST', 'rest/v2/incident/panel_detail/');
+export const getLogFields = request('GET', 'apm_log_forward/bklog/api/v1/search/index_set/{pk}/fields/');
 export const incidentHistogram = request('POST', 'rest/v2/incident/date_histogram/');
 export const getIncidentDocId = request('GET', 'rest/v2/incident/get_incident_doc_id/');
 export const fetchConfigList = request('POST', 'rest/v2/incident/get_config/');
@@ -59,6 +60,7 @@ export default {
   incidentResults,
   incidentDiagnosis,
   getPanelDetail,
+  getLogFields,
   incidentHistogram,
   getIncidentDocId,
   fetchConfigList,
