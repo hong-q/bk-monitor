@@ -54,6 +54,8 @@ export interface IShootingModuleContext {
   incidentDetailData: Record<string, any>;
   /** 各模块的总结内容 */
   summaryList: ISummaryList;
+  /** 执行 interaction 前清理当前分析弹窗 */
+  closeAnalysisPopovers?: () => void;
   /** 跳转到告警列表的回调函数 */
   goAlertList: (list: IAlertData[]) => void;
   /** 跳转到策略详情的回调函数 */

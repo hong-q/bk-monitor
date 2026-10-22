@@ -173,11 +173,14 @@ export function handleCopy(data, $t, isGeneralEvent = false) {
 /**
  * 创建 interaction 执行器
  * 统一消费后端 interaction，并补充仅用于展示的侧滑标题
- * @param options - 含 onOpenDrawer 回调的上下文
+ * @param options - 含 interaction 回调和弹窗清理回调的上下文
  * @returns 执行函数 (interaction, title?) => void
  */
-export const createInteractionExecutor = (options: Pick<IShootingModuleContext, 'onOpenDrawer'>) => {
+export const createInteractionExecutor = (
+  options: Pick<IShootingModuleContext, 'closeAnalysisPopovers' | 'onOpenDrawer'>
+) => {
   const executeInteraction = (interaction?: IInteraction, title?: string) => {
+    options.closeAnalysisPopovers?.();
     handleInteraction(interaction, (context: IOpenDrawerContext) => {
       options.onOpenDrawer?.({ ...context, title });
     });

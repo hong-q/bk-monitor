@@ -187,6 +187,12 @@ export default defineComponent({
       overflowMap: {},
     });
 
+    // 打开其他侧滑或页面前，统一清理主内容区和独立查看侧滑中的弹窗
+    const closeAnalysisPopovers = () => {
+      popoverState.currentPopover = null;
+      sliderPopoverState.currentPopover = null;
+    };
+
     const subPanels = computed(() => props.panelConfig.sub_panels || {});
     const showList = computed(() => MODULE_LIST.filter(item => subPanels.value?.[item.key]?.enabled));
 
@@ -391,6 +397,7 @@ export default defineComponent({
 
     // 查看完整 JSON 数据
     const onViewFullJson = (data: any, dataIndex: number) => {
+      closeAnalysisPopovers();
       currentJsonData.value = data;
       currentJsonDataIndex.value = dataIndex;
       // 先销毁再重建 JSON 查看器，以重置折叠状态
@@ -403,6 +410,7 @@ export default defineComponent({
 
     // 查看全部子事件
     const onViewAllEvents = (item: IEventsAnalysis) => {
+      closeAnalysisPopovers();
       currentAllEventsItem.value = item;
       showAllEventsSideslider.value = true;
     };
@@ -509,6 +517,7 @@ export default defineComponent({
       ...tableDrawer,
       popoverState,
       sliderPopoverState,
+      closeAnalysisPopovers,
       activeIndex,
       goAlertList,
       goDetail,
@@ -543,6 +552,7 @@ export default defineComponent({
       onViewAllEvents: this.onViewAllEvents,
       onViewFullJson: this.onViewFullJson,
       onOpenDrawer: this.onOpenDrawer,
+      closeAnalysisPopovers: this.closeAnalysisPopovers,
     });
 
     // 缓存主内容区和侧边栏的shooting modules
@@ -551,11 +561,20 @@ export default defineComponent({
     );
 
     // 统一的title slot渲染
-    const titleSlot = (item: IListItem) => (
+    const titleSlot = (item: IListItem, panelId: string) => (
       <div
         id={`panel-${item.key}`}
         class='failure-item-title'
       >
+        {this.subPanels[item.key]?.status !== 'failed' && (
+          <i
+            class='icon-monitor icon-chakan1 independent-view-icon cursor-link'
+            v-bk-tooltips={this.t('独立查看')}
+            onClick={() => {
+              this.toggleSlider(panelId);
+            }}
+          />
+        )}
         <i class={`icon-monitor ${item.icon} title-icon-circle`} />
         <span class='field-name'>{item.name}</span>
       </div>
@@ -640,16 +659,16 @@ export default defineComponent({
                 id='panel-summary'
                 class='ai-card'
               >
-                <i
-                  class='icon-monitor icon-chakan1 independent-view-icon cursor-link'
-                  v-bk-tooltips={this.t('独立查看')}
-                  onClick={() => {
-                    this.toggleSlider('panel-summary');
-                  }}
-                />
                 <div class='ai-card-title'>
                   <span class='ai-card-title-icon' />
                   {this.t('故障总结')}
+                  <i
+                    class='icon-monitor icon-chakan1 independent-view-icon cursor-link'
+                    v-bk-tooltips={this.t('独立查看')}
+                    onClick={() => {
+                      this.toggleSlider('panel-summary');
+                    }}
+                  />
                 </div>
                 <Loading
                   class={{ 'ai-card-loading': this.loadingList.summary }}
@@ -672,16 +691,7 @@ export default defineComponent({
                     key={item.id}
                     class='failure-item-wrapper'
                   >
-                    {this.subPanels[item.key]?.status !== 'failed' && (
-                      <i
-                        class='icon-monitor icon-chakan1 independent-view-icon cursor-link'
-                        v-bk-tooltips={this.t('独立查看')}
-                        onClick={() => {
-                          this.toggleSlider(item.id);
-                        }}
-                      />
-                    )}
-                    {titleSlot(item)}
+                    {titleSlot(item, item.id)}
                     <div class='failure-item-content'>{contentSlot(item, mainShootingModule)}</div>
                   </div>
                 );

@@ -233,9 +233,8 @@
 .trouble-shooting-slider-main {
   padding: 20px 24px !important;
 
-  .failure-item-wrapper {
+  .failure-item-wrapper .failure-item-content {
     padding: 0 !important;
-    margin: 0;
   }
 }
 
@@ -251,6 +250,13 @@
 
 .failure-trouble-shooting {
   height: 100%;
+
+  .trouble-shooting-main > .failure-item-wrapper > .failure-item-title {
+    position: sticky;
+    top: -5px;
+    z-index: 1;
+    background: #fff;
+  }
 }
 
 .failure-trouble-shooting,
@@ -261,7 +267,7 @@
 
   .trouble-shooting-header {
     position: relative;
-    z-index: 1;
+    z-index: 2;
     width: 100%;
     height: 10px;
     padding-right: 8px;
@@ -310,7 +316,7 @@
     .ai-card {
       position: relative;
       width: 100%;
-      padding: 12px 0;
+      padding-bottom: 12px;
       margin-bottom: 10px;
       background-image: linear-gradient(169deg, #eaefff 8%, #fff 75%);
       border-radius: 2px;
@@ -332,16 +338,34 @@
       }
 
       .ai-card-title {
+        position: sticky;
+        top: -5px;
+        z-index: 1;
         display: flex;
         align-items: center;
         width: 100%;
-        height: 32px;
-        padding: 0 12px;
-        margin-bottom: 6px;
+        height: 50px;
+        padding: 12px 12px 6px;
+        background: #eaefff;
+        border-radius: 4px 4px 0 0;
+        box-shadow:
+          inset 0 1px 0 rgb(122 158 253 / 30%),
+          inset 1px 0 0 rgb(122 158 253 / 30%),
+          inset -1px 0 0 rgb(122 158 253 / 30%);
         font-size: 14px;
         font-weight: 600;
         line-height: 32px;
         color: #235dfa;
+
+        .independent-view-icon {
+          position: absolute;
+          top: 19px;
+          right: 16px;
+          z-index: 2;
+          display: none;
+          font-weight: normal;
+          line-height: 1;
+        }
       }
 
       .ai-card-title-icon {
@@ -374,18 +398,11 @@
         }
       }
 
-      .independent-view-icon {
-        position: absolute;
-        top: 19px;
-        right: 16px;
-        display: none;
-      }
     }
 
     .failure-item-wrapper {
       position: relative;
       width: 100%;
-      padding: 14px 16px 16px;
       margin-bottom: 8px;
       background: #fff;
       border-radius: 4px;
@@ -395,8 +412,12 @@
 
       .independent-view-icon {
         position: absolute;
+        top: 50%;
         right: 16px;
+        z-index: 2;
         display: none;
+        transform: translateY(-50%);
+        font-weight: normal;
       }
 
       &:hover {
@@ -408,7 +429,7 @@
       .failure-item-title {
         display: flex;
         align-items: center;
-        padding-bottom: 14px;
+        padding: 14px 16px 14px;
         font-size: 14px;
         font-weight: 600;
         color: #313238;
@@ -431,6 +452,7 @@
       .failure-item-content {
         overflow: auto;
         color: #4d4f56;
+        padding: 0 16px 16px;
 
         @include collapse-content-styles;
       }
